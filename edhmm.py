@@ -10,7 +10,9 @@ from duration import *
 log = logging.getLogger('edhmm')
 
 class Categorical:
-    
+    """
+    Defines a Categorical Distribution
+    """
     @types(p=np.ndarray)
     def __init__(self,p):
         p += 0.000000001
@@ -26,7 +28,9 @@ class Categorical:
 
 
 class Transition:
-    
+    """
+    Defines a Transition distribution as collection of categorical distributions
+    """
     @types(A=np.ndarray)
     def __init__(self, A):
         assert A.shape[0] == A.shape[1], \
@@ -54,7 +58,9 @@ class Transition:
         
 
 class Initial:
-    
+    """
+    Defines an Initial distribution
+    """
     @types(pi=np.ndarray)
     def __init__(self,pi):
         assert sum(pi)==1, \
@@ -74,7 +80,29 @@ class Initial:
         return int(self.dist.random())
 
 class EDHMM:
+    """
+    Defines an Explicit Duration Hidden Markov Model
     
+    Parameters
+    ----------
+    A : Transition Object
+        The transition distribution
+    O : Emission Object
+        The emission distribution
+    D : Duration object
+        The duration distribution
+    pi : Initial object
+        The initial distribution
+    
+    Attributes
+    ----------
+    K : int
+        The number of states in the system
+    states : list
+        list of states
+    durations : list
+        list of possible durations
+    """
     @types(A=Transition, O=Emission, D=Duration, pi=Initial)
     def __init__(self,A,O,D,pi):
         self.A = A
@@ -89,6 +117,10 @@ class EDHMM:
         self.report()
     
     def get_max_duration(self):
+        """
+        Finds the maximum duration by sampling lots from all the duration 
+        distributions
+        """
         return int(max([
             self.D(state=q)
             for i in range(1000) 
@@ -102,6 +134,13 @@ class EDHMM:
     
     @types(T=int)
     def gen(self,T):
+        """
+        generator that yields state/observation tuples
+        
+        See Also
+        --------
+        see EDHMM.sim for more details
+        """
         # draw initial state
         x = self.pi.sample()
         # draw initial distribution
@@ -118,6 +157,14 @@ class EDHMM:
     
     @types(T=int)
     def sim(self,T):
+        """
+        Draws a sequence of length T from the EDHMM
+        
+        Parameters
+        ----------
+        T : int
+            number of time points
+        """
         X, Y = [], []
         for x,y in self.gen(T):
             X.append(x)
@@ -125,6 +172,27 @@ class EDHMM:
         return X, Y
     
     def duration_likelihood(self,durations=None):
+        """
+        Calculates the duration likelihood per state per duration
+        
+        Parameters
+        ----------
+        durations : list, optional
+            durations over which to calulate likelihoods
+        
+        Returns
+        -------
+        D : np.ndarray
+            K x d array, where the i,j th element is the likleihood of the 
+            duration j in given that we're in state i. Here d is the length
+            of the durations list.
+            
+        Notes
+        -----
+        If you specify a durations list, then the resulting matrix will be the
+        likelihood of each duration in the list. Otherwise self.durations will
+        be used. 
+        """
         log.info('calculating duration likelihood')
         if durations is None:
             durations = self.durations
@@ -133,6 +201,29 @@ class EDHMM:
         )
     
     def forward(self,Y,D=None):
+        """
+        forward algorithm as specified by Yu and Kobayashi 2006.
+        
+        Paramters
+        ---------
+        Y : list of np.ndarray
+            data
+        D : np.ndarray, optional
+            duration likelihoods
+        Returns
+        -------
+        alpha : list of np.ndarray
+            forward variable, defined here as p(x_t | y_1 .. y_t)
+        bstar : list of np.ndarray
+            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
+            
+        Notes
+        -----
+        Note that this forward variable is not p(x_t, y_1 .. y_t) which is 
+        usually calculated in the forward variable. Note also that the variable
+        calculated here is properly normalised, and hence suffers no scaling
+        issues.  
+        """
         log.info('running forward algorithm')
         T = len(Y)
         alpha = [np.zeros((self.K, len(self.durations))) for y in Y]
@@ -173,6 +264,28 @@ class EDHMM:
         return alpha, bstar
     
     def backward(self,Y,bstar, D=None):
+        """
+        backward algorithm as specified by Yu and Kobayashi 2006.
+        
+        Paramters
+        ---------
+        Y : list of np.ndarray
+            data
+        bstar : list of np.ndarray
+            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
+        D : np.ndarray, optional
+            duration likelihoods
+        
+        Returns
+        -------
+        beta : list of np.ndarray
+            backward variable
+            
+        Notes
+        -----
+        Note that this backward variable is not p(y_t+1 .. y_T|x_t) which is 
+        usually calculated in the backward algorithm. 
+        """
         log.info('running backward algorithm')
         T = len(Y)
         beta = [np.zeros((self.K, len(self.durations))) for y in Y]
@@ -216,7 +329,7 @@ class EDHMM:
                 d -= 1
             else:
                 s = Categorical(alpha[t].sum(1)*self.A.A[:,s]).sample()
-                d =  Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
+                d = Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
         yield s
     
     def slice_sample(self,S):
@@ -244,7 +357,7 @@ class EDHMM:
         assert len(u) == T, len(u)
         
         #### <HACK>
-        log.info('finding max duration for current iteration')
+        log.debug('finding max duration for current iteration')
         max_d = 1
         for i in self.states:
             # TODO this won't work for non-Poisson distributions
@@ -254,7 +367,7 @@ class EDHMM:
                 d += 1
             max_d = max(d,max_d)
         durations = range(1,max_d+10)
-        log.info('found max duration: %s'%(max_d+10))
+        log.debug('found max duration: %s'%(max_d+10))
         #### <\HACK>         
         
         alpha = [np.zeros((self.K, len(durations))) for y in Y]
@@ -263,7 +376,6 @@ class EDHMM:
         D0 = self.duration_likelihood(durations)
         for t,ut in enumerate(u):
             assert ut < D0.max(), (t,ut,D0.max())
-        
         
         log.debug('starting iteration')
         for t in range(T):
@@ -288,14 +400,17 @@ class EDHMM:
             alpha[t] = alpha[t] / alpha[t].sum()
         return alpha, bstar
         
-    def beam(self, Y):
+    def beam(self, Y, its = 100, burn_in=20):
         S, Z = self.sim(len(Y)) # ignore Z
-        for i in range(100):
-            print "beam iteration: %s"%i
+        Sout = []
+        for i in range(its):
+            log.info("beam iteration: %s of %s"%(i,its))
             u = self.slice_sample(S)
             alpha, bstar = self.beam_forward(Y,u)
             S = [s for s in m.backward_sample(alpha)]
-        return S
+            if i > burn_in:
+                Sout.append(S)
+        return Sout
         
     def learn(self):
         pass
@@ -329,13 +444,14 @@ if __name__ == "__main__":
     m = EDHMM(A,O,D,pi)
     X,Y = m.sim(1000)
     
-    S = m.beam(Y)
+    S = m.beam(Y,burn_in=90)
     
     #alpha, beta, alpha_smooth = m.forward_backward(Y)
     #S = [s for s in m.backward_sample(alpha)]
     
     pb.plot(X)
-    pb.plot(S)
+    for Si in S:
+        pb.plot(S)
     pb.ylim([-0.1,2.1])
     pb.show()
     
