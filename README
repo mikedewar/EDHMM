@@ -2,3 +2,4 @@ The Explicit Duration HMM
 
 This project is to develop a set of tools for studying behaviour based on the Explicit Duration Hidden Markov Model. 
 
+If by some chance you stumble across this repo, you should know that currently only the forward backward algorithm (Yu and Kobayashi, 2006) is implemented. Stay tuned for the rest of the Baum Welch algorithm.
