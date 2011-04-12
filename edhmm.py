@@ -220,7 +220,7 @@ class EDHMM:
         Notes
         -----
         Note that this forward variable is not p(x_t, y_1 .. y_t) which is 
-        usually calculated in the forward variable. Note also that the variable
+        usually calculated in the forward algorithm. Note also that the variable
         calculated here is properly normalised, and hence suffers no scaling
         issues.  
         """
@@ -310,15 +310,30 @@ class EDHMM:
     
     @types(Y=list)
     def forward_backward(self,Y,D=None):
+        """
+        Forward Backward algorithm.
+        
+        Paramters
+        ---------
+        Y : list of np.ndarray
+            data
+        bstar : list of np.ndarray
+            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
+        D : np.ndarray, optional
+            duration likelihoods
+        """
         if D is None:
             D = self.duration_likelihood()
-        alpha, bstar = m.forward(Y,D)
-        beta = m.backward(Y,bstar,D)
+        alpha, bstar = self.forward(Y,D)
+        beta = self.backward(Y,bstar,D)
         alpha_smooth = [f*b for f,b in zip(alpha,beta)]
         assert all([a.sum() for a in alpha_smooth])
         return alpha, beta, alpha_smooth
     
     def backward_sample(self, alpha):
+        """
+        Samples a state sequence, in reverse order, given the forward variable
+        """
         T = len(alpha)
         s = Categorical(alpha[-1].sum(1)).sample()
         d_index = Categorical(alpha[-1][s,:]).sample()
@@ -407,7 +422,7 @@ class EDHMM:
             log.info("beam iteration: %s of %s"%(i,its))
             u = self.slice_sample(S)
             alpha, bstar = self.beam_forward(Y,u)
-            S = [s for s in m.backward_sample(alpha)]
+            S = [s for s in self.backward_sample(alpha)]
             if i > burn_in:
                 Sout.append(S)
         return Sout
