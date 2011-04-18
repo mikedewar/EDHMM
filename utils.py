@@ -14,4 +14,4 @@ def types(**_params_):
 
 
 def isprob(x):
-    return (x.sum() > 0.99) and (x.sum() < 1.001)
+    return (x.sum() > 0.9) and (x.sum() < 1.1)

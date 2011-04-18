@@ -1,3 +1,5 @@
+import numpy as np
+
 from edhmm import EDHMM
 from emission import Emission
 from duration import Duration
@@ -25,10 +27,11 @@ def test_backward(model):
     
 def test_forward_backward(model):
     X,Y = model.sim(T)
-    F, B, As = model.forward_backward(Y)
-    assert all(isprob(f) for f in F)
-    assert all(isprob(f*b) for f,b in zip(F,B))
-    assert all(isprob(a) for a in As)
-    
+    gamma, Tcal, Estar, Dcal = model.forward_backward(Y)
+    assert all(isprob(g) for g in gamma)
+
 def test_baum_welch(model):
-    pass
+    X,Y = model.sim(T)
+    l, m_est = baum_welch(Y,K=3)
+    assert all(np.diff(l) > 0)
+    

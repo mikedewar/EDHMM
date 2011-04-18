@@ -1,14 +1,19 @@
 import pymc
 import numpy as np
 from utils import *
+import logging
+
+log = logging.getLogger('duration')
+
 
 class Duration(object):
     """
-    Class describing an arbitrary output distribution. You should overload 
-    self.likelihood and self.sample to make a new distribution.
+    Class describing an arbitrary output distribution. Built on top of pymc,
+    you need to provide a K-length list of vald pymc.Stochastic objects in the
+    as the `dist` attribute, before calling Duration.__init__().
     """
     def __init__(self):
-        # every Emission distribution should have a dist attribute, which
+        # every Duration distribution should have a dist attribute, which
         # should be a pymc.Stochastic object
         assert all(
             [
@@ -30,7 +35,7 @@ class Duration(object):
         returns a sampled duration from the model
         """
         try:
-            return self.dist[state].random()
+            return np.ceil(self.dist[state].random())
         except IndexError:
             print "your sampling Duration distribution is throwing an index error."
             print "\tthe state chosen is: %s"%state
@@ -63,9 +68,19 @@ class Duration(object):
         return len(self.dist)
 
 
+class LogNormal(Duration):
+    "LogNormal Duration distribution"
+    
+    def __init__(self,mus,taus):
+        self.dist = [
+            pymc.Lognormal('duration_%s'%j,m,t)
+            for j,(m,t) in enumerate(zip(mus,taus))
+        ]
+        Duration.__init__(self)
+
 class Poisson(Duration):
     "Poisson Duration distribution"
-    @types(lambdas=list)
+    
     def __init__(self, lambdas):
         """
         Parameters
@@ -78,21 +93,33 @@ class Poisson(Duration):
             for j,l in enumerate(lambdas)
         ]
         Duration.__init__(self)
+    
+    def report(self):
+        log.debug(
+            'duration paramters:\n%s'%
+            [round(p.parents['mu'],2) for p in self.dist]
+        )
         
-    def learn(self, eta):
-        mus = np.zeros(len(self.mus))
-        dur_range = range(1, eta[0].shape[1] + 1)
-        for j in range(len(self.mus)):
-            num = 0.0
-            den = 0.0
-            for t,e in enumerate(eta):
-                for di,d in enumerate(dur_range):
-                    num += eta[t][j, di] * d
-                    den += eta[t][j, di]
-            mus[j] = num/den
-            assert not np.isnan(mus[j]), (num, den, dur_range)
-            
-        return Poisson(mus)
+    def update(self, Dcal):
+        log.debug('updating duration distribution')
+        D = sum(Dcal) / (len(Dcal) - 1)
+        
+        #print D
+        #print np.arange(1,D.shape[1]+1)
+        #print D * np.arange(1,D.shape[1]+1)
+        #print (D * np.arange(1,D.shape[1]+1)).sum(1)
+        
+        
+        lambdas = ((D * np.arange(1,D.shape[1]+1)).sum(1) / D.sum(1)) 
+        #print lambdas
+        
+        for l in lambdas:
+            assert not np.isnan(l)
+            assert l >= 1, l
+        self.dist = [
+            pymc.Poisson('duration_%s'%j,l)
+            for j,l in enumerate(lambdas)
+        ]
     
     def plot(self, max_duration=30):
         num_states = len(self.mus)
@@ -110,5 +137,3 @@ class Poisson(Duration):
             yield abs(mu_self-mu_test)
     
 
-if __name__ == "__main__":
-    D = Poisson([10,20])
