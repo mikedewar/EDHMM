@@ -1,6 +1,6 @@
 import pymc
 from utils import types
-import numpy as np
+import pylab as pb
 import logging
 log = logging.getLogger('emission')
 
@@ -33,7 +33,7 @@ class Emission():
             observation 
         """
         self.dist[state].set_value(Y)
-        return np.exp(self.dist[state].logp)
+        return pb.exp(self.dist[state].logp)
     
     def sample(self, state):
         """
@@ -77,19 +77,19 @@ class Gaussian(Emission):
     
     def update(self, gamma, Y):
         """
-        gamma : list of np.ndarray
+        gamma : list of pb.ndarray
             gamma[t][i] = p(x_t = i | Y)
         """
-        mean = np.zeros(len(self.dist))
+        mean = pb.zeros(len(self.dist))
         for i,d in enumerate(self.dist):
-            num = np.sum([g[i] * y for (g,y) in zip(gamma,Y)])
-            den = np.sum([g[i] for g in gamma])
+            num = pb.sum([g[i] * y for (g,y) in zip(gamma,Y)])
+            den = pb.sum([g[i] for g in gamma])
             mean =  float(num / den)
             # this calculation of the precision is overly complex, but I only
             # really want to write one update method for this and the multi-
             # variate case. Sorry.
-            num = np.sum([
-                g[i] * np.outer(y - mean, y-mean) 
+            num = pb.sum([
+                g[i] * pb.outer(y - mean, y-mean) 
                 for (g,y) in zip(gamma,Y)
             ])
                 
@@ -98,12 +98,19 @@ class Gaussian(Emission):
     
     def report(self):
         log.info(
-            'means:\n%s'%[round(p.parents['mu'],2) for p in self.dist]
+            'means:\n%s'%[round(p.parents['mu'],4) for p in self.dist]
         )
         log.info(
-            'precisions:\n%s'%[round(p.parents['tau'],2) for p in self.dist]
+            'precisions:\n%s'%[round(p.parents['tau'],4) for p in self.dist]
         )
-        
+    
+    def plot(self,x):
+        y = pb.zeros(len(x))
+        for i, xi in enumerate(x):
+            for k in range(len(self.dist)):
+                y[i] += self.likelihood(k, xi)
+        pb.plot(x,y)
+        pb.show()
 
 class MultivariateGaussian(Emission):
     
@@ -118,19 +125,19 @@ class MultivariateGaussian(Emission):
     
     def update(self, gamma, Y):
         """
-        gamma : list of np.ndarray
+        gamma : list of pb.ndarray
             gamma[t][i] = p(x_t = i | Y)
         """
-        mean = np.zeros(len(self.dist))
+        mean = pb.zeros(len(self.dist))
         for i,d in enumerate(self.dist):
-            num = np.sum([g[i] * y for (g,y) in zip(gamma,Y)],0)
-            den = np.sum([g[i] for g in gamma],1)
+            num = pb.sum([g[i] * y for (g,y) in zip(gamma,Y)],0)
+            den = pb.sum([g[i] for g in gamma],1)
             mean = num / den
             # this calculation of the precision is overly complex, but I only
             # really want to write one update method for this and the multi-
             # variate case. Sorry.
-            num = np.sum([
-                g[i] * np.outer(y - mean[i], y-mean[i]) 
+            num = pb.sum([
+                g[i] * pb.outer(y - mean[i], y-mean[i]) 
                 for (g,y) in zip(gamma,Y)
             ],0)
             precision = num / den
@@ -138,7 +145,7 @@ class MultivariateGaussian(Emission):
 
 if __name__ == "__main__":
     O = Gaussian(
-        means=[0,1],
+        means=[-5,1],
         precisions=[1,1]
     )
     O = MultivariateGaussian(

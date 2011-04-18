@@ -33,4 +33,4 @@ class Initial:
         self.pi /= np.sum(self.pi)
     
     def report(self):
-        log.info("\tinitial distribution:\n%s"%[round(p[0],2) for p in self.pi])
+        log.info("initial distribution:\n%s"%[round(p[0],2) for p in self.pi])

@@ -6,7 +6,7 @@ from duration import Duration
 from gen_test_data import gen_models
 from utils import *
 
-T = 200
+T = 600
 
 def pytest_generate_tests(metafunc):
     if "model" in metafunc.funcargnames:
@@ -32,6 +32,6 @@ def test_forward_backward(model):
 
 def test_baum_welch(model):
     X,Y = model.sim(T)
-    l, m_est = baum_welch(Y,K=3)
+    l, m_est = baum_welch(Y,K = model.K)
     assert all(np.diff(l) > 0)
     
