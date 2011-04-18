@@ -36,6 +36,6 @@ def test_forward_backward(model):
 
 def test_baum_welch(model):
     X,Y = model.sim(T)
-    l, m_est = baum_welch(Y,K = model.K)
+    m,l = baum_welch(Y,K = model.K, stopping_threshold=0.01)
     assert all(np.diff(l) > 0)
     
