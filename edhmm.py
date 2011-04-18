@@ -1,6 +1,7 @@
 import numpy as np
 import logging
 import pymc
+import scipy.cluster.vq
 
 from utils import *
 from emission import *
@@ -463,8 +464,8 @@ def baum_welch(Y,K,stopping_threshold=0.001,multiple_restarts=10):
         m = initialise_EDHMM(Y, K)
         l = [-100000]
         it = 1
-        delta_l = abs(10000)
-        while delta_l > stopping_threshold:
+        delta_l = 10000
+        while abs(delta_l) > stopping_threshold:
             D = m.duration_likelihood()
             gamma, Tcal, Estar, Dcal = m.forward_backward(Y, D)
             m.update(gamma, Tcal, Estar, Y, Dcal)
@@ -472,7 +473,7 @@ def baum_welch(Y,K,stopping_threshold=0.001,multiple_restarts=10):
             it += 1
             m.report()
             l.append(m.expected_log_likelihood(gamma, Y, Dcal))
-            delta_l = abs(l[-1]-l[-2])
+            delta_l = l[-1]-l[-2]
             log.debug("change in likelihood: %s"%delta_l)
             if delta_l < 0:
                 log.warn("negative change in likelihood!")
@@ -492,26 +493,31 @@ def initialise_EDHMM(Y,K):
     # normalise rows
     A = (A.T / A.sum(1)).T
     A = Transition(A)
-    # for the emission means I'm going to just pick random means somewhere in 
-    # the range of Y. Note the nasty heuristic below!
+    # for the initial means just do a quick k-means...
+    T = len(Y)
+    try:
+        N = Y[0].shape[0]
+    except IndexError:
+        N = 1
     Y = np.array(Y)
-    r = Y.max() - Y.min()
-    m = [
-        [(r * np.random.rand()) - np.abs(Y.min()) for k in range(K)]
-        for i in range(100)
-    ]
-    d = [pb.diff(m).sum() for mi in m]
-    means = m[pb.where(d==max(d))[0][0]]
-    # for the variances I'm going to draw K subsamples of the data
-    # and find the variances of the subsamples.
-    i = np.random.random_integers(
-        low=0,
-        high=len(Y)-1,
-        size=(K, len(Y)/K)
-    )
-    precisions = [1/np.var(Y[i[k]]) for k in range(K)]
+    Y.shape = (T,N)
+    book, distortion = scipy.cluster.vq.kmeans(Y,K)
+    means = list(book.flatten())
+    # find the variances of the data that's been clustered using kmeans
+    code, dist = scipy.cluster.vq.vq(Y,book)
+    precisions = [1/np.var(Y[code==k]) for k in range(K)]
     O = Gaussian(means,precisions)
-    D = Poisson([(np.random.rand() * len(Y))/K for k in range(K)])
+    # estimate the durations from the kmeans code book
+    dmax = np.zeros(K)
+    for k in range(K):
+        this_duration = 0
+        for c in code:
+            if c==k:
+                this_duration += 1
+            else:
+                dmax[k] = max(this_duration, dmax[k])
+                this_duration = 0
+    D = Poisson(dmax)
     return EDHMM(A,O,D,pi)
     
 
