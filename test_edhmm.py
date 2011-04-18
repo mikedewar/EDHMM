@@ -1,6 +1,6 @@
 import numpy as np
 
-from edhmm import EDHMM
+from edhmm import EDHMM, baum_welch
 from emission import Emission
 from duration import Duration
 from gen_test_data import gen_models
@@ -16,14 +16,14 @@ def pytest_generate_tests(metafunc):
 
 def test_forward(model):
     X,Y = model.sim(T)
-    F,N = model.forward(Y)
-    assert all(isprob(f) for f in F)
+    alpha, bstar, E, S = model.forward(Y)
+    assert all(isprob(f) for f in alpha)
     
 def test_backward(model):
     X,Y = model.sim(T)
-    F,bstar = model.forward(Y)
-    B = model.backward(Y, bstar)
-    assert all(isprob(f*b) for f,b in zip(F,B))
+    alpha, bstar, E, S = model.forward(Y)
+    beta, Estar = model.backward(Y, bstar)
+    assert all(isprob(f*b) for f,b in zip(alpha,beta))
     
 def test_forward_backward(model):
     X,Y = model.sim(T)

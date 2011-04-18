@@ -532,7 +532,7 @@ if __name__ == "__main__":
     
     l, m_est = baum_welch(Y,K=3)
     
-    #S = m.beam(Y,burn_in=90)
+    #S = m.beam(Y)
     
     #alpha, beta, alpha_smooth = m.forward_backward(Y)
     #S = [s for s in m.backward_sample(alpha)]
