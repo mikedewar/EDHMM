@@ -6,6 +6,10 @@ from duration import Duration
 from gen_test_data import gen_models
 from utils import *
 
+import logging
+logging.basicConfig(filename="unittesting.log", level=logging.DEBUG)
+
+
 T = 600
 
 def pytest_generate_tests(metafunc):

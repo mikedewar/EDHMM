@@ -168,7 +168,7 @@ class EDHMM:
         """
         forward algorithm as specified by Yu and Kobayashi 2006.
         
-        Paramters
+        Parameters
         ---------
         Y : list of np.ndarray
             data
@@ -234,7 +234,7 @@ class EDHMM:
         """
         backward algorithm as specified by Yu and Kobayashi 2006.
         
-        Paramters
+        Parameters
         ---------
         Y : list of np.ndarray
             data
@@ -281,7 +281,7 @@ class EDHMM:
         """
         Forward Backward algorithm.
         
-        Paramters
+        Parameters
         ---------
         Y : list of np.ndarray
             data
