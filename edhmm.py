@@ -448,23 +448,23 @@ class EDHMM:
                 Sout.append(S)
         return Sout
     
-    def update(self, gamma, T, Estar, Y, Dcal):
-        log.info('updating parameters')
-        self.A.update(T)
+    def update(self, gamma, Tcal, Estar, Y, Dcal):
+        log.info('updating parameters')        
+        self.A.update(Tcal)
         self.pi.update(Estar)
         self.O.update(gamma,Y)
-        self.D.update(gamma)
+        self.D.update(Dcal)
     
 def baum_welch(Y,K,stopping_threshold=0.001,multiple_restarts=10):
     model_store = []
     l_end_store = []
     l_store = []
     for restart in range(multiple_restarts):
-        m = initialise_EDHMM(Y, K=3)
-        l = [0, -1]
+        m = initialise_EDHMM(Y, K)
+        l = [-100000]
         it = 1
-        while abs(l[-1] - l[-2]) > stopping_threshold:
-            lold = l
+        delta_l = abs(10000)
+        while delta_l > stopping_threshold:
             D = m.duration_likelihood()
             gamma, Tcal, Estar, Dcal = m.forward_backward(Y, D)
             m.update(gamma, Tcal, Estar, Y, Dcal)
@@ -472,9 +472,13 @@ def baum_welch(Y,K,stopping_threshold=0.001,multiple_restarts=10):
             it += 1
             m.report()
             l.append(m.expected_log_likelihood(gamma, Y, Dcal))
-            log.debug("change in likelihood: %s"%abs(l[-1]-l[-2]))
+            delta_l = abs(l[-1]-l[-2])
+            log.debug("change in likelihood: %s"%delta_l)
+            if delta_l < 0:
+                log.warn("negative change in likelihood!")
+        print "\n\n"
         model_store.append(m)
-        l_store.append(l[2:])
+        l_store.append(l[1:])
         l_end_store.append(l[-1])
     log.debug('final likelihoods: %s'%l_end_store)
     i = l.index(max(l))    
@@ -488,14 +492,16 @@ def initialise_EDHMM(Y,K):
     # normalise rows
     A = (A.T / A.sum(1)).T
     A = Transition(A)
-    # for the means I'm going to just pick random means somewhere in the 
-    # range of Y
+    # for the emission means I'm going to just pick random means somewhere in 
+    # the range of Y. Note the nasty heuristic below!
     Y = np.array(Y)
     r = Y.max() - Y.min()
-    means = [
-        (r * np.random.rand()) - np.array(Y).min()
-        for k in range(K)
+    m = [
+        [(r * np.random.rand()) - np.abs(Y.min()) for k in range(K)]
+        for i in range(100)
     ]
+    d = [pb.diff(m).sum() for mi in m]
+    means = m[pb.where(d==max(d))[0][0]]
     # for the variances I'm going to draw K subsamples of the data
     # and find the variances of the subsamples.
     i = np.random.random_integers(
@@ -505,7 +511,7 @@ def initialise_EDHMM(Y,K):
     )
     precisions = [1/np.var(Y[i[k]]) for k in range(K)]
     O = Gaussian(means,precisions)
-    D = Poisson([len(Y)/K for k in range(K)])
+    D = Poisson([(np.random.rand() * len(Y))/K for k in range(K)])
     return EDHMM(A,O,D,pi)
     
 
