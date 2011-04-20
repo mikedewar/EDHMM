@@ -96,23 +96,14 @@ class Poisson(Duration):
     
     def report(self):
         log.debug(
-            'duration paramters:\n%s'%
+            'duration parameters:\n%s'%
             [round(p.parents['mu'],2) for p in self.dist]
         )
-        
+    
     def update(self, Dcal):
         log.debug('updating duration distribution')
-        D = sum(Dcal) / (len(Dcal) - 1)
-        
-        #print D
-        #print np.arange(1,D.shape[1]+1)
-        #print D * np.arange(1,D.shape[1]+1)
-        #print (D * np.arange(1,D.shape[1]+1)).sum(1)
-        
-        
+        D = sum(Dcal) / (len(Dcal) - 1)        
         lambdas = ((D * np.arange(1,D.shape[1]+1)).sum(1) / D.sum(1)) 
-        #print lambdas
-        
         for l in lambdas:
             assert not np.isnan(l)
             assert l >= 1, l
@@ -136,4 +127,3 @@ class Poisson(Duration):
         for (mu_self,mu_test) in zip(self.mus,dur_dist.mus):
             yield abs(mu_self-mu_test)
     
-

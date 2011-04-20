@@ -123,17 +123,25 @@ class EDHMM:
         return X, Y
     
     def expected_log_likelihood(self,gamma,Y,Dcal):
+
+        def ln(x):
+            assert np.all(x>0)
+            return np.nan_to_num(np.log(x))
+
         log.debug('calculating the expected log likelihood')
         X = [np.sum(g,1) for g in gamma]
-        X = [np.where(x==x.max())[0][0] for x in X]
         D = [np.sum(d,0) for d in Dcal]
-        D = [np.where(d==d.max())[0][0] for d in D]
-        l = np.log(self.pi[X[0]])
+        duration_likelihood = self.duration_likelihood()
+        l = np.dot(X[0],ln(self.pi.pi))
+        assert not np.isnan(l),  np.dot(X[0],ln(self.pi.pi))
         for x,xi,y,d in zip(X[1:],X[:-1],Y[1:],D[1:]):
-            if self.A[x,xi]:
-                l += np.log(self.A[x,xi])
-            l += np.log(self.O(x,y))
-            l += np.log(self.D(x,d))
+            l += np.dot(xi, np.dot(ln(self.A.A), x))
+            assert not np.isnan(l),  np.dot(xi, np.dot(ln(self.A.A), x))
+            l += np.dot([ln(self.O(i,y)) for i in self.states], x)
+            assert not np.isnan(l), np.dot([ln(self.O(i,y)) for i in
+                                            self.states], x)
+            l += np.dot(x, np.dot(duration_likelihood, d))
+            assert not np.isnan(l),  np.dot(x, np.dot(duration_likelihood, d))
         return l[0]
     
     def duration_likelihood(self,durations=None):
