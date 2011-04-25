@@ -326,13 +326,13 @@ class EDHMM:
         d_index = Categorical(alpha[-1][s,:]).sample()
         d = self.durations[d_index]
         for t in reversed(xrange(T-1)):
-            yield s
+            yield s,d
             if d > 1:
                 d -= 1
             else:
                 s = Categorical(alpha[t].sum(1)*self.A.A[:,s]).sample()
                 d = Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
-        yield s
+        yield s,d
     
     def slice_sample(self,S):
         log.info('forming slice')
@@ -379,7 +379,7 @@ class EDHMM:
         for t,ut in enumerate(u):
             assert ut < D0.max(), (t,ut,D0.max())
         
-        log.debug('starting iteration')
+        log.debug('starting forward recursion')
         for t in range(T):
             # D is repeatedly pruned depending on the value of u[t]
             # this sets D with likelihoods greater than the threshold to zero
@@ -390,7 +390,9 @@ class EDHMM:
             if t == 0:
                 alpha[t] = self.pi.pi * D
             else:
-                alpha_shifted = np.hstack([alpha[t-1][:, 1:], np.zeros((self.K, 1))])
+                alpha_shifted = np.hstack(
+                    [alpha[t-1][:, 1:], np.zeros((self.K, 1))]
+                )
                 alpha[t] = (S * D) + (bstar[t-1] * alpha_shifted)
             
             U[:,0] = np.array([self.O(i,Y[t]) for i in self.states])
@@ -398,55 +400,12 @@ class EDHMM:
             bstar[t] = U / rinv
             E[:,0] = alpha[t][:,0] * bstar[t][:,0]
             S = np.dot(self.A.A.T,E)
-        
             alpha[t] = alpha[t] / alpha[t].sum()
-        return alpha, bstar
+        return alpha, bstar       
     
-    def beam_backward(self,Y,bstar,u=None):
-        T = len(Y)
-        E = np.zeros((self.K,1))
-        U = np.zeros((self.K,1))
-        
-        if u is None:
+    def beam(self, Y, S=None, its = 100, burn_in=20):
+        if S == None:
             S, Z = self.sim(len(Y)) # ignore Z
-            u = self.slice_sample(S)
-                
-        assert len(u) == T, len(u)
-        
-        #### <HACK>
-        log.debug('finding max duration for current iteration')
-        max_d = 1
-        for i in self.states:
-            # TODO this won't work for non-Poisson distributions
-            # better ways to choose a starting d for this little search?
-            d = self.D.dist[i].parents['mu']
-            while self.D(i,d) > min(u):
-                d += 1
-            max_d = max(d,max_d)
-        durations = range(1,max_d+10)
-        log.debug('found max duration: %s'%(durations[-1]))
-        D0 = self.duration_likelihood(durations)
-        #### <\HACK>
-        for t in reversed(xrange(T)):
-            D = D0 * (D0 > u[t])
-            if t == T-1:
-                for d_index, d in enumerate(durations):
-                    beta[t][:,d_index] = bstar[t][:,0]
-            else:
-                for d_index, d in enumerate(durations):
-                    if d == 1:
-                        beta[t][:,d_index] = bstar[t][:,0] * Sstar[:,0]
-                    else:
-                        beta[t][:,d_index] = beta[t+1][:, d_index-1] * bstar[t][:,0]
-            Estar = (D * beta[t]).sum(1)
-            Sstar = np.zeros((self.K,1))
-            for j in self.states:
-                for i in self.states:
-                    Sstar[j,0] += Estar[i] * self.A.A[j,i]
-        return beta        
-    
-    def beam(self, Y, its = 100, burn_in=20):
-        S, Z = self.sim(len(Y)) # ignore Z
         Sout = []
         for i in range(its):
             log.info("beam iteration: %s of %s"%(i,its))
