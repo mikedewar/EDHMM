@@ -97,7 +97,7 @@ class EDHMM:
         # draw initial distribution
         d = self.D.sample(x)
         for t in range(T):
-            yield x, self.O.sample(x)
+            yield x, self.O.sample(x), d
             if d > 1:
                 d -= 1
             else:
@@ -116,11 +116,12 @@ class EDHMM:
         T : int
             number of time points
         """
-        X, Y = [], []
-        for x,y in self.gen(T):
+        X, Y, D = [], [], []
+        for x,y,d in self.gen(T):
             X.append(x)
             Y.append(y)
-        return X, Y
+            D.append(d)
+        return X, Y, D
     
     def expected_log_likelihood(self,gamma,Y,Dcal):
 
@@ -334,14 +335,13 @@ class EDHMM:
                 d = Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
         yield s,d
     
-    def slice_sample(self,S):
+    def slice_sample(self,S,D):
         log.info('forming slice')
         u = []
-        for s in S:
-            d = self.D(s)
-            y = self.D(s,d)
-            u.append(np.random.uniform(low=0, high=y))
-            assert u[-1] < y
+        for s,d in zip(S,D):
+            l = self.D(s,d)
+            u.append(np.random.uniform(low=0, high=l))
+            assert u[-1] < l
         return np.array(u)
     
     def beam_forward(self, Y, u=None):
@@ -353,8 +353,8 @@ class EDHMM:
         U = np.zeros((self.K,1))
         
         if u is None:
-            S, Z = self.sim(len(Y)) # ignore Z
-            u = self.slice_sample(S)
+            S, Z, D_seq = self.sim(len(Y)) # ignore Z
+            u = self.slice_sample(S,D_seq)
                 
         assert len(u) == T, len(u)
         
@@ -403,18 +403,19 @@ class EDHMM:
             alpha[t] = alpha[t] / alpha[t].sum()
         return alpha, bstar       
     
-    def beam(self, Y, S=None, its = 100, burn_in=20):
-        if S == None:
-            S, Z = self.sim(len(Y)) # ignore Z
-        Sout = []
+    def beam(self, Y, S=None, Dseq=None, its = 100, burn_in=20):
+        if S == None or Dseq == None:
+            S, Z, Dseq = self.sim(len(Y)) # ignore Z
+        Sout, Dout = [], []
         for i in range(its):
             log.info("beam iteration: %s of %s"%(i,its))
-            u = self.slice_sample(S)
-            alpha, bstar = self.beam_forward(Y,u)
-            S = [s for s in self.backward_sample(alpha)]
+            U = self.slice_sample(S,Dseq)
+            alpha, bstar = self.beam_forward(Y,U)
+            S,D = zip(*[(s,d) for (s,d) in self.backward_sample(alpha)])
             if i > burn_in:
                 Sout.append(S)
-        return Sout
+                Dout.append(D)
+        return Sout, Dout
     
     def update(self, gamma, Tcal, Estar, Y, Dcal):
         log.info('updating parameters')        
@@ -507,7 +508,7 @@ if __name__ == "__main__":
     D = Poisson([10,20,30])
     pi = Initial(np.array([0.33, 0.33, 0.34]))
     m = EDHMM(A,O,D,pi)
-    X,Y = m.sim(1000)
+    X,Y,D = m.sim(1000)
     
     l, m_est = baum_welch(Y,K=3)
     
