@@ -1,0 +1,12 @@
+Inference
+=========
+ - how do we choose which alpha_t to calculate in the forward recursion?is it just those requested by the sum at t+1?
+ - how do we initialise the forward recursion?
+ - how is u taken into account in the backward recursion
+
+Results
+=======
+ - model with same emission distributions but different durations
+ - model with same duration distributions but different emissions
+ - model with drastically varying durations?
+ - application to T-Cells
