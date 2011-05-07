@@ -353,21 +353,33 @@ class EDHMM:
             for d in range(l[i],r[i]+1):
                 alphahat[0][i][d] = self.pi.likelihood((i,d))
         
-        for t,(y,u) in enumerate(zip(Y,U)):
+        for t,(y,u_t) in enumerate(zip(Y,U)):
             # find those z_t and z_t-1 that are worthy, given u
             worthy = {}
             for i in self.states:
                 for j in self.states:
-                    for di in range(1,r[i]+1):
-                        for dj in range(1,r[j]+1):
+                    for di in range(0,r[i]):
+                        for dj in range(0,r[j]):
+                            # so for every possible state duration pair, we 
+                            # calculate the probability `l` of transition from the
+                            # previous state (j,dj) to the current state (i,di).
                             if dj == 1:
-                                l = self.A[j,i] * self.D(i,di)
+                                # note that we add one below as di is really the
+                                # index into the set of durations (i.e. it starts 
+                                # at zero and ends at the rightmost support -1)
+                                l = self.A[j,i] * self.D(i,di+1) 
                             else:
                                 if i==j and dj != 1 and dj=di-1:
                                     l = 1
                                 else:
                                     l = 0
-                            if l > u:
+                            # if the probaility `l` is greater than u_t then we 
+                            # add that pair to our dictionary of worthy. The 
+                            # dictionary's keys index the alphas we will
+                            # calculate at time t, and the values of the 
+                            # dictionary are the indices into alpha at time t-1
+                            # that we need to sum over.
+                            if l > u_t:
                                 try:
                                     worthy[(i,di)].append((j,dj))
                                 except KeyError:
