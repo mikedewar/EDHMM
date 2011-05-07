@@ -390,9 +390,12 @@ class EDHMM:
                     # alpha hat. Then J is a list of those indices into the 
                     # previous alpha hat we should sum over to find the next 
                     # alpha hat.
+                    
+                    # so you can read this indexing as 
+                    # alphahat[time][state][duration]
                     alphahat[t][i[0]][i[1]] = (
-                        self.O(i[0],y) * 
-                        np.sum([alphahat[t-1][j[0],j[1]] for j in J])
+                        self.O(i[0],y) *  # this is just the emission prob
+                        np.sum([alphahat[t-1][j[0]][j[1]] for j in J])
                     )
                         
         
