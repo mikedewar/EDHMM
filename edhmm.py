@@ -92,10 +92,8 @@ class EDHMM:
         --------
         see EDHMM.sim for more details
         """
-        # draw initial state
-        x = self.pi.sample()
-        # draw initial distribution
-        d = self.D.sample(x)
+        # draw initial state and duration
+        x,d = self.pi.sample()
         for t in range(T):
             yield x, self.O.sample(x), d
             if d > 1:
@@ -343,6 +341,52 @@ class EDHMM:
             u.append(np.random.uniform(low=0, high=l))
             assert u[-1] < l
         return np.array(u)
+        
+    def beam_forward_new(self, Y, U):        
+        # initialise alphahat
+        alphahat = [np.empty(self.K, dtype=object) for y in Y]
+        l,r = zip(*[self.D.support(i) for i in self.states])
+        
+        for i in self.states:
+            print l,r
+            alphahat[0][i] = {}
+            for d in range(l[i],r[i]+1):
+                alphahat[0][i][d] = self.pi.likelihood((i,d))
+        
+        for t,(y,u) in enumerate(zip(Y,U)):
+            # find those z_t and z_t-1 that are worthy, given u
+            worthy = {}
+            for i in self.states:
+                for j in self.states:
+                    for di in range(1,r[i]+1):
+                        for dj in range(1,r[j]+1):
+                            if dj == 1:
+                                l = self.A[j,i] * self.D(i,di)
+                            else:
+                                if i==j and dj != 1 and dj=di-1:
+                                    l = 1
+                                else:
+                                    l = 0
+                            if l > u:
+                                try:
+                                    worthy[(i,di)].append((j,dj))
+                                except KeyError:
+                                    worthy[(i,di)] = [(j,dj)]
+            
+            for i,J in worthy.items():
+                    # here i is those (state,duration)s worth figuring out for 
+                    # alpha hat. Then J is a list of those indices into the 
+                    # previous alpha hat we should sum over to find the next 
+                    # alpha hat.
+                    alphahat[t][i[0]][i[1]] = (
+                        self.O(i[0],y) * 
+                        np.sum([alphahat[t-1][j[0],j[1]] for j in J])
+                    )
+                        
+        
+        
+    def beam_new(self,Y):
+        U = [np.random.uniform(0,0.001) for y in Y]
     
     def beam_forward(self, Y, u=None):
         
