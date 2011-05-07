@@ -346,19 +346,18 @@ class EDHMM:
         # initialise alphahat
         alphahat = [np.empty(self.K, dtype=object) for y in Y]
         l,r = zip(*[self.D.support(i) for i in self.states])
-        
         for i in self.states:
-            print l,r
             alphahat[0][i] = {}
             for d in range(l[i],r[i]+1):
                 alphahat[0][i][d] = self.pi.likelihood((i,d))
         
         for t,(y,u_t) in enumerate(zip(Y,U)):
+            t+=1
             # find those z_t and z_t-1 that are worthy, given u
             worthy = {}
             for i in self.states:
-                for j in self.states:
-                    for di in range(0,r[i]):
+                for di in range(0,r[i]):
+                    for j in self.states:
                         for dj in range(0,r[j]):
                             # so for every possible state duration pair, we 
                             # calculate the probability `l` of transition from the
@@ -369,7 +368,7 @@ class EDHMM:
                                 # at zero and ends at the rightmost support -1)
                                 l = self.A[j,i] * self.D(i,di+1) 
                             else:
-                                if i==j and dj != 1 and dj=di-1:
+                                if i==j and dj != 1 and dj==di-1:
                                     l = 1
                                 else:
                                     l = 0
@@ -393,10 +392,14 @@ class EDHMM:
                     
                     # so you can read this indexing as 
                     # alphahat[time][state][duration]
-                    alphahat[t][i[0]][i[1]] = (
-                        self.O(i[0],y) *  # this is just the emission prob
-                        np.sum([alphahat[t-1][j[0]][j[1]] for j in J])
-                    )
+                    try:
+                        alphahat[t][i[0]][i[1]] = (
+                            self.O(i[0],y) *  # this is just the emission prob
+                            np.sum([alphahat[t-1][j[0]][j[1]] for j in J])
+                        )
+                    except KeyError:
+                        log.warn("the following indices were requested in alpha_t-1 and couldn't be found:\n%s"%J)
+                        raise
                         
         
         
