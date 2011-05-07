@@ -10,27 +10,44 @@ class Initial:
     """
     Defines an Initial distribution
     """
-    @types(pi=np.ndarray)
-    def __init__(self,pi):
-        assert sum(pi)==1, \
-            "invalid initial distribution"
-        self.pi = pi
-        self.pi.shape = (len(self.pi),1)
-        self.shape = pi.shape
-        self.dist = pymc.Categorical("initial distribution",pi)
+    def __init__(self, K, beta=0.001):
+        self.K = K
+        self.a = beta
+        state_dist = pymc.Categorical('state_init', [1./K for i in range(K)])
+        dur_dist = pymc.Exponential('dur_init', beta)
+        self.dist = pymc.Model({
+            "s_init":state_dist, 
+            "d_init":dur_dist
+        })
     
     def __getitem__(self,key):
         return self.pi[key]
     
+    def __call__(self, z=None):
+        if z is None:
+            return self.sample()
+        else:
+            return self.likelihood(z)
+    
     def __len__(self):
-        return self.pi.shape[0]
+        return self.K
     
     def sample(self):
-        return int(self.dist.random())
+        self.dist.draw_from_prior()
+        x = int(self.dist.s_init.value)
+        d = int(round(self.dist.d_init.value))
+        return x, d
+    
+    def likelihood(self, z):
+        self.dist.s_init.set_value(z[0])
+        self.dist.d_init.set_value(z[1])
+        l_x = np.exp(self.dist.s_init.logp)
+        l_d = np.exp(self.dist.d_init.logp)
+        return l_x * l_d
         
     def update(self, E):
-        self.pi *= E[0]
-        self.pi /= np.sum(self.pi)
+        raise NotImplementedError
     
     def report(self):
-        log.info("initial distribution:\n%s"%[round(p[0],2) for p in self.pi])
+        report = "initial distribution: K=%s, beta=%s"%(self.K,self.beta)
+        log.info(report)
