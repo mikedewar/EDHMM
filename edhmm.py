@@ -94,6 +94,7 @@ class EDHMM:
         """
         # draw initial state and duration
         x,d = self.pi.sample()
+        d = self.D.sample(x)
         for t in range(T):
             yield x, self.O.sample(x), d
             if d > 1:
@@ -344,28 +345,37 @@ class EDHMM:
         
     def beam_forward_new(self, Y, U):        
         # initialise alphahat
-        alphahat = [np.empty(self.K, dtype=object) for y in Y]
+        alphahat = [{} for y in Y]
+        alphahat.append({})
         l,r = zip(*[self.D.support(i) for i in self.states])
         for i in self.states:
             alphahat[0][i] = {}
-            for d in range(l[i],r[i]+1):
+            for d in range(1,r[i]+1):
                 alphahat[0][i][d] = self.pi.likelihood((i,d))
         
+        #pp.pprint(alphahat[0])
+        
         for t,(y,u_t) in enumerate(zip(Y,U)):
-            t+=1
+            t += 1
+            try:
+                # initialise alpahat[t]
+                for i in self.states:
+                    alphahat[t][i] = {}
+            except IndexError:
+                print t
+                print len(alphahat)
+                break
+            
             # find those z_t and z_t-1 that are worthy, given u
             worthy = {}
             for i in self.states:
-                for di in range(0,r[i]):
+                for di in range(1,r[i]+1):
                     for j in self.states:
-                        for dj in range(0,r[j]):
+                        for dj in range(1,r[j]+1):
                             # so for every possible state duration pair, we 
                             # calculate the probability `l` of transition from the
                             # previous state (j,dj) to the current state (i,di).
                             if dj == 1:
-                                # note that we add one below as di is really the
-                                # index into the set of durations (i.e. it starts 
-                                # at zero and ends at the rightmost support -1)
                                 l = self.A[j,i] * self.D(i,di+1) 
                             else:
                                 if i==j and dj != 1 and dj==di-1:
@@ -383,24 +393,44 @@ class EDHMM:
                                     worthy[(i,di)].append((j,dj))
                                 except KeyError:
                                     worthy[(i,di)] = [(j,dj)]
-            
+
             for i,J in worthy.items():
-                    # here i is those (state,duration)s worth figuring out for 
-                    # alpha hat. Then J is a list of those indices into the 
-                    # previous alpha hat we should sum over to find the next 
-                    # alpha hat.
-                    
-                    # so you can read this indexing as 
-                    # alphahat[time][state][duration]
+                
+                # here i is those (state,duration)s worth figuring out for 
+                # alpha hat. Then J is a list of those indices into the 
+                # previous alpha hat we should sum over to find the next 
+                # alpha hat.
+                
+                # so you can read this indexing as 
+                # alphahat[time][state][duration]
+                
+                alphahat[t][i[0]][i[1]] = 0
+                
+                for j in J:
                     try:
-                        alphahat[t][i[0]][i[1]] = (
-                            self.O(i[0],y) *  # this is just the emission prob
-                            np.sum([alphahat[t-1][j[0]][j[1]] for j in J])
-                        )
+                        alphahat[t][i[0]][i[1]] += alphahat[t-1][j[0]][j[1]]
                     except KeyError:
-                        log.warn("the following indices were requested in alpha_t-1 and couldn't be found:\n%s"%J)
-                        raise
-                        
+                        # if a KeyError occurred, then we already decided
+                        # that alphahat[t-1][state][duration] was zero, so
+                        # we can just ignore it
+                        #log.warn("the following indices were requested in alpha_t-1 and couldn't be found:\n%s"%J)
+                        #log.warn("alpha[%s]:"%str(t-1))
+                        #log.warn( alphahat[t-1])
+                        #break
+                        pass
+                alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
+            
+            n = 0
+            for i in self.states:
+                for v in alphahat[t][i].values():
+                    n += v
+            
+            for i in self.states:
+                for d in alphahat[t][i].keys():
+                    alphahat[t][i][d] /= n
+            
+            
+        return alphahat
         
         
     def beam_new(self,Y):
