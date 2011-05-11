@@ -3,6 +3,10 @@ import logging
 import pymc
 import scipy.cluster.vq
 
+import pprint
+
+pp = pprint.PrettyPrinter(indent=4)
+
 from utils import *
 from emission import *
 from duration import *
@@ -27,6 +31,7 @@ class Categorical:
             return np.where(x==1)[0][0]
         except IndexError:
             print x
+            print self.p
             raise
 
 class EDHMM:
@@ -334,40 +339,22 @@ class EDHMM:
                 d = Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
         yield s,d
     
-    def slice_sample(self,S,D):
+    def slice_sample(self,Z):
         log.info('forming slice')
         u = []
-        for s,d in zip(S,D):
+        for s,d in Z:
             l = self.D(s,d)
             u.append(np.random.uniform(low=0, high=l))
             assert u[-1] < l
         return np.array(u)
-        
-    def beam_forward_new(self, Y, U):        
-        # initialise alphahat
-        alphahat = [{} for y in Y]
-        alphahat.append({})
+    
+    def worthy_transitions(self, U):
+        log.info('calculating transitions worthy of u')
+        # find those z_t and z_t-1 that are worthy, given u
         l,r = zip(*[self.D.support(i) for i in self.states])
-        for i in self.states:
-            alphahat[0][i] = {}
-            for d in range(1,r[i]+1):
-                alphahat[0][i][d] = self.pi.likelihood((i,d))
-        
-        #pp.pprint(alphahat[0])
-        
-        for t,(y,u_t) in enumerate(zip(Y,U)):
-            t += 1
-            try:
-                # initialise alpahat[t]
-                for i in self.states:
-                    alphahat[t][i] = {}
-            except IndexError:
-                print t
-                print len(alphahat)
-                break
-            
-            # find those z_t and z_t-1 that are worthy, given u
-            worthy = {}
+        worthy = [None for u in U]
+        for t,u_t in enumerate(U):
+            worthy[t] = {}
             for i in self.states:
                 for di in range(1,r[i]+1):
                     for j in self.states:
@@ -376,9 +363,9 @@ class EDHMM:
                             # calculate the probability `l` of transition from the
                             # previous state (j,dj) to the current state (i,di).
                             if dj == 1:
-                                l = self.A[j,i] * self.D(i,di+1) 
+                                l = self.A[j,i] * self.D(i,di) 
                             else:
-                                if i==j and dj != 1 and dj==di-1:
+                                if i==j and dj != 1 and di==dj-1:
                                     l = 1
                                 else:
                                     l = 0
@@ -390,51 +377,158 @@ class EDHMM:
                             # that we need to sum over.
                             if l > u_t:
                                 try:
-                                    worthy[(i,di)].append((j,dj))
+                                    worthy[t][(i,di)].append((j,dj))
                                 except KeyError:
-                                    worthy[(i,di)] = [(j,dj)]
-
-            for i,J in worthy.items():
+                                    worthy[t][(i,di)] = [(j,dj)]
+        return worthy
+            
+    def beam_forward_new(self, Y, U=None, W=None):        
+        # initialise alphahat
+        alphahat = [{} for y in Y]
+        l,r = zip(*[self.D.support(i) for i in self.states])
+        
+        if W is None:
+            W = self.worthy_transitions(U)
+               
+        for t,(y,worthy) in enumerate(zip(Y,W)):
+            if t == 0:
+                for i in self.states:
+                    alphahat[t][i] = {}
+                    for d in range(1,r[i]+10):
+                        alphahat[t][i][d] = self.pi.likelihood((i,d))
+            else:
+                for i,J in worthy.items():
+                    
+                    # initialise alpahat[t] if necessary
+                    if i[0] not in alphahat[t]:
+                        alphahat[t][i[0]] = {i[1]:0}
+                    else:
+                        if i[1] not in alphahat[t][i[0]]:
+                            alphahat[t][i[0]][i[1]] = 0
+                    
+                    # here i is those (state,duration)s worth figuring out for 
+                    # alpha hat. Then J is a list of those indices into the 
+                    # previous alpha hat we should sum over to find the next 
+                    # alpha hat.
                 
-                # here i is those (state,duration)s worth figuring out for 
-                # alpha hat. Then J is a list of those indices into the 
-                # previous alpha hat we should sum over to find the next 
-                # alpha hat.
-                
-                # so you can read this indexing as 
-                # alphahat[time][state][duration]
-                
-                alphahat[t][i[0]][i[1]] = 0
-                
-                for j in J:
-                    try:
-                        alphahat[t][i[0]][i[1]] += alphahat[t-1][j[0]][j[1]]
+                    # so you can read this indexing as 
+                    # alphahat[time][state][duration]
+                                    
+                    for j in J:
+                        try:
+                            alphahat[t][i[0]][i[1]] += alphahat[t-1][j[0]][j[1]]
+                        except KeyError:
+                            # if a KeyError occurred, then we already decided
+                            # that alphahat[t-1][state][duration] was zero, so
+                            # we can just ignore it
+                            pass
+                    try:        
+                        alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
                     except KeyError:
-                        # if a KeyError occurred, then we already decided
-                        # that alphahat[t-1][state][duration] was zero, so
-                        # we can just ignore it
-                        #log.warn("the following indices were requested in alpha_t-1 and couldn't be found:\n%s"%J)
-                        #log.warn("alpha[%s]:"%str(t-1))
-                        #log.warn( alphahat[t-1])
-                        #break
-                        pass
-                alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
+                        print alphahat[t][i[0]][i[1]]
+                        raise
+                
+                # find sum(alpha[t])
+                n = 0
+                for i in self.states:
+                    for v in alphahat[t][i].values():
+                        n += v
+                assert n, alphahat[t-1]
+                # normalise
+                for i in self.states:
+                    for d in alphahat[t][i].keys():
+                        alphahat[t][i][d] /= n
             
-            n = 0
-            for i in self.states:
-                for v in alphahat[t][i].values():
-                    n += v
-            
-            for i in self.states:
-                for d in alphahat[t][i].keys():
-                    alphahat[t][i][d] /= n
-            
-            
+        print len(W)
         return alphahat
+    
+    def beam_backward_sample_new(self, alphahat, W):
         
+        def sample_z(a):
+            xi = Categorical(
+                np.array([sum(a[i].values()) for i in a.keys()])
+            ).sample()
+            x = a.keys()[xi]
+            di = Categorical(
+                np.array(a[x].values())
+            ).sample()
+            d = a[x].keys()[di]
+            return x,d
         
+        T = len(alphahat)
+        try:
+            Z = [sample_z(alphahat[-1])]
+        except IndexError:
+            #pp.pprint(alphahat)
+            #print len(alphahat)
+            raise
+        
+        for t in reversed(xrange(T-1)):
+            # pick the subset of alphahats
+            # here w[t+1][Z[-1]] is a list of the possible zs you can sample
+            # from in alphahat[t] given that the next state is Z[-1]
+            a = {}            
+            
+            for j in W[t+1][Z[-1]]:
+                
+                a[j[0]] = {}
+                try:
+                    a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
+                except KeyError:
+                    a[j[0]][j[1]] = 0
+                z = sample_z(a)
+            
+            Z.append(z)
+        Z.reverse()
+        return Z
+                
     def beam_new(self,Y):
-        U = [np.random.uniform(0,0.001) for y in Y]
+        U = [np.random.uniform(0,0.0000001) for y in Y]
+        bored = False
+        # run once to get samples 
+        W = self.worthy_transitions(U)
+        alpha = self.beam_forward_new(Y, W=W)
+        assert len(alpha) == len(Y)
+        Z = self.beam_backward_sample_new(alpha,W)
+        assert len(Z) == len(Y)
+        D_sample = self.sample_D(Z)
+        A_sample = self.sample_A(Z)
+        count = 0
+        
+        A = []
+        D = []
+        
+        while not bored:
+            
+            self.A.update_new(A_sample)
+            self.D.update_new(D_sample)
+            
+            U = self.slice_sample(Z)
+            assert len(U) == len(Y)
+            W = self.worthy_transitions(U)
+            try:
+                alpha = self.beam_forward_new(Y, W=W)
+            except:
+                print "Normalisation failed in alpha. Rejecting this sample."
+                pass
+            try:
+                Z = self.beam_backward_sample_new(alpha,W)
+            except KeyError:
+                print "Tried to sample an impossible state sequence. Rejecting this sample."
+                pass
+            
+            D_sample = self.sample_D(Z)
+            A_sample = self.sample_A(Z)
+            
+            count +=1
+            if count > 100:
+                bored = True
+            
+            A.append(A_sample)
+            D.append(D_sample)
+            
+        
+        return A, D
     
     def beam_forward(self, Y, u=None):
         
@@ -508,6 +602,70 @@ class EDHMM:
                 Sout.append(S)
                 Dout.append(D)
         return Sout, Dout
+    
+    def sample_D(self,Z):
+        log.info('sampling from D')
+        # let's count the durations
+        X = [z[0] for z in Z]        
+        durations = dict([(i,[0]) for i in self.states])
+        now = X[0]
+        for s in X:
+            if now == s:
+                durations[now][-1] += 1
+            else:
+                now = s
+                durations[now].append(1)
+        # build a little pymc model (this should probably live in the duration
+        # class)
+        mu = [
+            pymc.Gamma("mu_%s"%i, alpha=1, beta=1)
+            for i in self.states
+        ]
+        D = [
+            pymc.Poisson("duration_%s"%i, mu[i], value=durations[i], observed=True) 
+            for i in self.states
+        ]
+        M = pymc.MCMC(pymc.Model({'D':D, 'mu':mu}))
+        M.sample(iter=101,burn=100)
+        samples = np.array([M.trace('mu_%s'%i)[:] for i in self.states])
+        return samples.flatten()
+    
+    def sample_A(self, Z):
+        log.info('sampling from A')
+        # let's count the transitions
+        X = [z[0] for z in Z]
+        n = [[] for i in self.states]
+        now = X[0]
+        for s in X:
+            if now != s:
+                n[now].append(s)
+                now = s
+                
+        # form prior variables
+        p = np.zeros((self.K, self.K))
+        for i in self.states:
+            for j in self.states:
+                if i!=j:
+                    p[i,j] = 1.0/(self.K-1)
+        # add a little bit to everywhere and renormalise
+        p+=0.05
+        for row in p:
+            row /= row.sum()
+        
+        A_prior = [
+            pymc.Dirichlet("p_%s"%i, p[i])
+            for i in self.states
+        ]
+        A = [
+            pymc.Categorical('A_%s'%i, A_prior[i], value=n[i], observed=True)
+            for i in self.states
+        ]
+        model = pymc.Model({"A_prior":A_prior, "A":A})
+        M=pymc.MCMC(model)
+        M.sample(iter=101,burn=100)
+        samples = np.array([M.trace('p_%s'%i)[:] for i in self.states])
+        return samples.reshape((self.K, self.K-1))
+        
     
     def update(self, gamma, Tcal, Estar, Y, Dcal):
         log.info('updating parameters')        
