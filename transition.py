@@ -48,6 +48,12 @@ class Transition:
                 self.A[i,j] = np.sum([Tt[i,j] for Tt in T])
         for i in range(len(self)):
             self.A[i] /= np.sum(self.A[i])
+
+    def update_new(self,P):
+        self.dist = [
+            pymc.Categorical("transition from %s"%i, p)
+            for i, p in enumerate(P)
+        ]
     
     def report(self):
         log.info("transition matrix:\n%s"%self.A.round(4))

@@ -2,6 +2,7 @@ import pymc
 import numpy as np
 from utils import *
 import logging
+import pylab as pb
 
 log = logging.getLogger('duration')
 
@@ -112,8 +113,14 @@ class Poisson(Duration):
             for j,l in enumerate(lambdas)
         ]
     
+    def update_new(self,mu):
+        self.dist = [
+            pymc.Poisson('duration_%s'%j,l)
+            for j,l in enumerate(mu)
+        ]
+    
     def plot(self, max_duration=30):
-        num_states = len(self.mus)
+        num_states = len(self.dist)
         for j in range(num_states):
             pb.subplot(num_states, 1, j+1)
             pb.plot(
@@ -126,4 +133,30 @@ class Poisson(Duration):
         assert dur_dist.__class__ is Poisson
         for (mu_self,mu_test) in zip(self.mus,dur_dist.mus):
             yield abs(mu_self-mu_test)
+    
+    def support(self, state, threshold=0.001):
+        mu = self.dist[state].parents['mu']
+        # walk left
+        d, dl = mu, 1
+        lold = self(state,d)
+        while dl > threshold:
+            lnew = self(state,d)
+            dl = abs(lnew-lold)
+            lold = lnew
+            d -= 1
+        left = d
+        # walk right
+        d, dl = mu, 1
+        lold = self(state,d)
+        while dl > threshold:
+            d += 1
+            lnew = self(state,d)
+            dl = abs(lnew-lold)
+            lold = lnew
+        right = d
+        return int(left), int(right)
+        
+        
+        
+        
     

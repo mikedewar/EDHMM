@@ -12,7 +12,7 @@ class Initial:
     """
     def __init__(self, K, beta=0.001):
         self.K = K
-        self.a = beta
+        self.beta = beta
         state_dist = pymc.Categorical('state_init', [1./K for i in range(K)])
         dur_dist = pymc.Exponential('dur_init', beta)
         self.dist = pymc.Model({

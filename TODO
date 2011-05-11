@@ -9,4 +9,6 @@ Results
  - model with same emission distributions but different durations
  - model with same duration distributions but different emissions
  - model with drastically varying durations?
+ - compare speed to not slice sampling
+ - compare to sticky hdp hmm on synthetic / real data
  - application to T-Cells
