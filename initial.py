@@ -43,7 +43,7 @@ class Initial:
         self.dist.d_init.set_value(z[1])
         l_x = self.dist.s_init.logp
         l_d = self.dist.d_init.logp
-        return l_x * l_d
+        return l_x + l_d
         
     def update(self, E):
         raise NotImplementedError

@@ -6,7 +6,6 @@ import pylab as pb
 
 log = logging.getLogger('duration')
 
-
 class Duration(object):
     """
     Class describing an arbitrary output distribution. Built on top of pymc,
@@ -42,13 +41,6 @@ class Duration(object):
             print "\tthe state chosen is: %s"%state
             print "\tand the expected max is: %s"%(len(self)-1)
             raise
-    
-    def learn(self, eta):
-        """
-        returns a parameter set given 
-        :math: `\\eta[t][i,d] = p(x_{t-d+1}=i, ldots x_{t}=i,Y)`
-        """
-        raise NotImplementedError
     
     def plot(self):
         raise NotImplementedError
@@ -101,19 +93,7 @@ class Poisson(Duration):
             [round(p.parents['mu'],2) for p in self.dist]
         )
     
-    def update(self, Dcal):
-        log.debug('updating duration distribution')
-        D = sum(Dcal) / (len(Dcal) - 1)        
-        lambdas = ((D * np.arange(1,D.shape[1]+1)).sum(1) / D.sum(1)) 
-        for l in lambdas:
-            assert not np.isnan(l)
-            assert l >= 1, l
-        self.dist = [
-            pymc.Poisson('duration_%s'%j,l)
-            for j,l in enumerate(lambdas)
-        ]
-    
-    def update_new(self,mu):
+    def update(self,mu):
         self.dist = [
             pymc.Poisson('duration_%s'%j,l)
             for j,l in enumerate(mu)
@@ -128,11 +108,6 @@ class Poisson(Duration):
                 [self.likelihood(j, d) 
                  for d in range(1, max_duration+1)]
             )
-    
-    def compare(self, dur_dist):
-        assert dur_dist.__class__ is Poisson
-        for (mu_self,mu_test) in zip(self.mus,dur_dist.mus):
-            yield abs(mu_self-mu_test)
     
     def support(self, state, threshold=0.001):
         mu = self.dist[state].parents['mu']
@@ -156,7 +131,3 @@ class Poisson(Duration):
         right = d
         return int(left), int(right)
         
-        
-        
-        
-    

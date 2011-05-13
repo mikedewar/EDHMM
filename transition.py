@@ -17,6 +17,10 @@ class Transition:
             "non-square transition matrix"
         assert all(np.diag(A)==0), \
             "the EDHMM does not allow self transitions"
+        A += 0.00001
+        for row in A:
+            row/=row.sum()
+        
         for row in A:
             assert isprob(row), \
                 "invalid transition matrix:\n%s, \n%s"%(A, sum(row))
@@ -36,20 +40,13 @@ class Transition:
     def __str__(self):
         return str(self.A)
     
-    def sample(self,i):
-        return int(self.dist[i].random())
+    def likelihood(self,i,j):
+        return np.log(self.A[i,j])
     
-    def update(self,T):
-        """
-        T = 
-        """
-        for i in range(len(self)):
-            for j in range(len(self)):
-                self.A[i,j] = np.sum([Tt[i,j] for Tt in T])
-        for i in range(len(self)):
-            self.A[i] /= np.sum(self.A[i])
+    def sample(self,i):
+        return self.dist[i].random()
 
-    def update_new(self,P):
+    def update(self,P):
         self.dist = [
             pymc.Categorical("transition from %s"%i, p)
             for i, p in enumerate(P)
@@ -57,3 +54,9 @@ class Transition:
     
     def report(self):
         log.info("transition matrix:\n%s"%self.A.round(4))
+        
+    def __call__(self, i, j=None):
+        if j is None:
+            return self.sample(i)
+        else:
+            return self.likelihood(i, j)

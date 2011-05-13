@@ -22,11 +22,18 @@ class Categorical:
     """
     @types(p=np.ndarray)
     def __init__(self,p):
+        assert all(p>0), p
         p += 0.000000001
         self.p = p/p.sum()
+        assert self.p.sum().round(5) == 1, (self.p,  self.p.sum())
     
     def sample(self):
-        x = np.random.multinomial(1,self.p)
+        try:
+            x = np.random.multinomial(1,self.p)
+        except ValueError:
+            print self.p
+            print self.p.sum()
+            raise
         return np.where(x==1)[0][0]
 
 
@@ -127,12 +134,11 @@ class EDHMM:
         log.info('forming slice')
         u = [0.0001]
         for t in range(1,len(Z)):
-            i = Z[t-1][0]
-            j = Z[t][0]
-            di  = Z[t-1][1]
-            l = self.A[j,i] * pb.exp(self.D(i,di))
+            i  = Z[t-1][0]
+            j  = Z[t][0]
+            di = Z[t-1][1]
+            l = self.A(j,i) + self.D(i,di)
             u.append(np.random.uniform(low=0, high=l))
-            #assert u[-1] < l, (l,u,self.A[j,i])
         return np.array(u)
     
     def worthy_transitions(self, U):
@@ -151,13 +157,12 @@ class EDHMM:
                             # we only consider those transitions that are possible from 
                             # t-1 
                             if t > 0: 
-                                
                                 if (j,dj) in worthy[t-1]: 
                                     # so for every possible state duration pair, we 
                                     # calculate the probability `l` of transition from the
                                     # previous state (j,dj) to the current state (i,di).
                                     if dj == 1:
-                                        l = self.A[j,i] * pb.exp(self.D(i,di))
+                                        l = self.A(j,i) + self.D(i,di)
                                     else:
                                         if i==j and dj != 1 and di==dj-1:
                                             l = 1
@@ -177,7 +182,7 @@ class EDHMM:
                                             worthy[t][(i,di)] = [(j,dj)]
                             else:
                                 if dj == 1:
-                                    l = self.A[j,i] * np.exp(self.D(i,di))
+                                    l = self.A(j,i) + self.D(i,di)
                                     #print "l at the transition: %s"%l 
                                 else:
                                     if i==j and dj != 1 and di==dj-1:
@@ -190,19 +195,18 @@ class EDHMM:
                                 # calculate at time t, and the values of the 
                                 # dictionary are the indices into alpha at time t-1
                                 # that we need to sum over.
-                        
                                 if l > u_t:
                                     try:
                                         worthy[t][(i,di)].append((j,dj))
                                     except KeyError:
                                         worthy[t][(i,di)] = [(j,dj)]
             try:
-                assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
+                assert worthy[t], (worthy[t-1], worthy[t-2], np.log(u_t))                          
             except AssertionError:
                 for i in self.states:
                     for j in self.states:
                         for di in range(1,r[i]+1):
-                            l = self.A[j,i] * np.exp(self.D(i,di)).round(3)
+                            l = (self.A(j,i) + self.D(i,di)).round(3)
                             print "%s, %s, %s : %s"%(i,j,di,l)
                 raise
                 
@@ -225,7 +229,6 @@ class EDHMM:
                         alphahat[t][i][d] = self.pi.likelihood((i,d))
             else:
                 for i,J in worthy.items():
-                    
                     # initialise alpahat[t] if necessary
                     if i[0] not in alphahat[t]:
                         alphahat[t][i[0]] = {i[1]:0}
@@ -243,38 +246,43 @@ class EDHMM:
                                     
                     for j in J:
                         try:
-                            alphahat[t][i[0]][i[1]] += alphahat[t-1][j[0]][j[1]]
+                            alphahat[t][i[0]][i[1]] = np.log(
+                                np.exp(alphahat[t][i[0]][i[1]]) + 
+                                np.exp(alphahat[t-1][j[0]][j[1]])
+                            )
                         except KeyError:
                             # if a KeyError occurred, then we already decided
                             # that alphahat[t-1][state][duration] was zero, so
                             # we can just ignore it
                             pass
                     
-                    alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
-
+                    alphahat[t][i[0]][i[1]] += self.O(i[0],y)
+                    assert not np.isnan(alphahat[t][i[0]][i[1]]), self.O(i[0],y)
                 
-                # find sum(alpha[t])
-                n = 0
-                for i in alphahat[t]:
-                    for v in alphahat[t][i].values():
-                        n += v
+                if False:
+                    # find sum(alpha[t])
+            
+                    n = 0
+                    for i in alphahat[t]:
+                        for v in alphahat[t][i].values():
+                            n += v
                         
-                assert n, (n, W[:t+4])
-                # normalise
-                for i in alphahat[t]:
-                    for d in alphahat[t][i].keys():
-                        alphahat[t][i][d] /= n
+                    assert n, (n, W[:t+4])
+                    # normalise
+                    for i in alphahat[t]:
+                        for d in alphahat[t][i].keys():
+                            alphahat[t][i][d] /= n
         return alphahat
     
     def beam_backward_sample(self, alphahat, W):
         
         def sample_z(a):
             xi = Categorical(
-                np.array([sum(a[i].values()) for i in a.keys()])
+                np.array([sum(np.exp(a[i].values())) for i in a.keys()])
             ).sample()
             x = a.keys()[xi]
             di = Categorical(
-                np.array(a[x].values())
+                np.array(np.exp(a[x].values()))
             ).sample()
             d = a[x].keys()[di]
             return x,d
@@ -307,30 +315,31 @@ class EDHMM:
         return Z
                 
     def beam(self,Y):
-        U = [np.random.uniform(0,0.0000001) for y in Y]
+        U = [np.random.uniform(0,np.log(0.0000001)) for y in Y]
         bored = False
         # run once to get samples 
         W = self.worthy_transitions(U)
         alpha = self.beam_forward(Y, W=W)
         assert len(alpha) == len(Y)
-        Z = self.beam_backward_sample(alpha,W)
-        assert len(Z) == len(Y)
-        D_sample = self.sample_D(Z)
-        A_sample = self.sample_A(Z)
-        O_sample = self.sample_O(Z,Y)
+        Z_sample = self.beam_backward_sample(alpha,W)
+        assert len(Z_sample) == len(Y)
+        D_sample = self.sample_D(Z_sample)
+        A_sample = self.sample_A(Z_sample)
+        O_sample = self.sample_O(Z_sample,Y)
         count = 0
         
         A = []
         D = []
         O = []
+        Z = []
         
         while not bored:
             
-            self.A.update_new(A_sample)
-            self.D.update_new(D_sample)
-            self.O.update_new(O_sample)
+            self.A.update(A_sample)
+            self.D.update(D_sample)
+            self.O.update(O_sample)
             
-            U = self.slice_sample(Z)
+            U = self.slice_sample(Z_sample)
             assert len(U) == len(Y)
             W = self.worthy_transitions(U)
             try:
@@ -339,25 +348,26 @@ class EDHMM:
                 print "Normalisation failed in alpha. Rejecting this sample."
                 pass
             try:
-                Z = self.beam_backward_sample(alpha,W)
+                Z_sample = self.beam_backward_sample(alpha,W)
             except KeyError:
                 print "Tried to sample an impossible state sequence. Rejecting this sample."
                 pass
             
-            D_sample = self.sample_D(Z)
-            A_sample = self.sample_A(Z)
-            O_sample = self.sample_O(Z,Y)
+            
+            D_sample = self.sample_D(Z_sample)
+            A_sample = self.sample_A(Z_sample)
+            O_sample = self.sample_O(Z_sample,Y)
             
             count +=1
             if count > 100:
                 bored = True
             
+            Z.append(Z_sample)
             A.append(A_sample)
             D.append(D_sample)
             O.append(O_sample)
             
-        
-        return A, D, O
+        return A, D, O, Z
     
     def sample_D(self,Z):
         log.info('sampling from D')
@@ -390,15 +400,14 @@ class EDHMM:
         log.info('sampling from O')
         # lets gather all the observations associated with each state
         X = [z[0] for z in Z]
-        n = [[] for i in self.states]
+        n = dict([(i,[]) for i in self.states])
         now = X[0]
         for t,s in enumerate(X):
             n[now].append(np.array([Y[t]]))
             if now != s:
                 now = s
-        
         mu_prior = [
-            pymc.Normal('mu_%s'%i, 0, 10)
+            pymc.Normal('mu_%s'%i, 0, 0.01)
             for i in self.states
         ]
         cov_prior = [
@@ -463,27 +472,61 @@ class EDHMM:
         return samples.reshape((self.K, self.K-1))
         
 if __name__ == "__main__":
+    T = 200
+
     import sys
     import logging
     import pylab as pb
-    logging.basicConfig(
-        stream=sys.stdout,
-        level=logging.DEBUG
-    )
-        
-    A = Transition(np.array([[0, 0.3, 0.7], [0.6, 0, 0.4], [0.2, 0.8, 0]]))
-    O = Gaussian([-1,0,1],[1,1,1])
-    D = Poisson([10,20,30])
-    pi = Initial(np.array([0.33, 0.33, 0.34]))
+    import pprint
+
+    pp = pprint.PrettyPrinter(indent=4)
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
+    A = Transition(pb.array([[0, 0.3, 0.7], [0.6, 0, 0.4], [0.3, 0.7, 0]]))
+    O = Gaussian([-10,0,10],[1,1,1])
+    D = Poisson([10,10,10])
+    pi = Initial(K=3,beta=0.001)
     m = EDHMM(A,O,D,pi)
-    X,Y,D = m.sim(1000)
+    X,Y,Dseq = m.sim(T)
+
+    if False:
+        # set the above to true for some awesome testing action!
+        U = [np.random.uniform(0,np.log(0.0001)) for y in Y]
+        W = m.worthy_transitions(U)
+        alpha = m.beam_forward(Y, W=W)
+        Z = m.beam_backward_sample(alpha,W)
+        D_sample = m.sample_D(Z)
+        A_sample = m.sample_A(Z)
+        O_sample = m.sample_O(Z,Y)
+        
+        pb.figure()
+        pb.plot(X,'r',lw=2,alpha=0.5,label="True")
+        pb.plot([z[0] for z in Z],'b',label="Sample")
+        pb.legend()
+        pb.ylim((-0.1, 2.1))
+        pb.title('not badly separated emissions')
+        pb.show()
+        
+    else:
+        A,D,O,Z = m.beam(Y)
     
-    l, m_est = baum_welch(Y,K=3)
-    
-    #S = m.beam(Y)
-    
-    #alpha, beta, alpha_smooth = m.forward_backward(Y)
-    #S = [s for s in m.backward_sample(alpha)]
-    
-#   pb.plot(l)
-#   pb.show()
+        
+        pb.figure()
+        D = pb.array(D)
+        pb.subplot(1,3,1)
+        pb.hist(D[:,0])
+        pb.subplot(1,3,2)
+        pb.hist(D[:,1])
+        pb.subplot(1,3,3)
+        pb.hist(D[:,2])
+        pb.show()
+        
+        pb.figure()
+        pb.plot(X,'r',lw=2,alpha=0.5,label="True")
+        for i in range(10):
+            pb.plot([z[0] for z in Z_sample[-i]],'b',alpha=0.1, label="Sample")
+        pb.legend()
+        pb.ylim((-0.1, 2.1))
+        pb.title('well separated emissions')
+        pb.show()
+

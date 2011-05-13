@@ -46,7 +46,7 @@ class Emission():
         """
         return self.dist[state].random()
     
-    def update(self, Y, gamma):
+    def update(self, sample):
         raise NotImplementedError
         
     def compare(self, other):
@@ -75,7 +75,7 @@ class Gaussian(Emission):
         self.dim = 1
         Emission.__init__(self)
     
-    def update_new(self,sample):
+    def update(self,sample):
         self.dist = [
             pymc.Normal(
                 'emission_%s'%j, 
@@ -84,28 +84,6 @@ class Gaussian(Emission):
             ) 
             for j in range(len(sample[0]))
         ]
-    
-    
-    def update(self, gamma, Y):
-        """
-        gamma : list of pb.ndarray
-            gamma[t][i] = p(x_t = i | Y)
-        """
-        mean = pb.zeros(len(self.dist))
-        for i,d in enumerate(self.dist):
-            num = pb.sum([g[i] * y for (g,y) in zip(gamma,Y)])
-            den = pb.sum([g[i] for g in gamma])
-            mean =  float(num / den)
-            # this calculation of the precision is overly complex, but I only
-            # really want to write one update method for this and the multi-
-            # variate case. Sorry.
-            num = pb.sum([
-                g[i] * pb.outer(y - mean, y-mean) 
-                for (g,y) in zip(gamma,Y)
-            ])
-                
-            precision = float(1.0/(num/den))
-            self.dist[i] = pymc.Normal('emission_%s'%i, mean, precision)
     
     def report(self):
         log.info(
@@ -133,26 +111,6 @@ class MultivariateGaussian(Emission):
         ]
         self.dim = 2
         Emission.__init__(self)
-    
-    def update(self, gamma, Y):
-        """
-        gamma : list of pb.ndarray
-            gamma[t][i] = p(x_t = i | Y)
-        """
-        mean = pb.zeros(len(self.dist))
-        for i,d in enumerate(self.dist):
-            num = pb.sum([g[i] * y for (g,y) in zip(gamma,Y)],0)
-            den = pb.sum([g[i] for g in gamma],1)
-            mean = num / den
-            # this calculation of the precision is overly complex, but I only
-            # really want to write one update method for this and the multi-
-            # variate case. Sorry.
-            num = pb.sum([
-                g[i] * pb.outer(y - mean[i], y-mean[i]) 
-                for (g,y) in zip(gamma,Y)
-            ],0)
-            precision = num / den
-            self.dist[i] = pymc.MvNormalCov('emission_%s'%i, mean, precision) 
 
 if __name__ == "__main__":
     O = Gaussian(
