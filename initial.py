@@ -41,8 +41,8 @@ class Initial:
     def likelihood(self, z):
         self.dist.s_init.set_value(z[0])
         self.dist.d_init.set_value(z[1])
-        l_x = np.exp(self.dist.s_init.logp)
-        l_d = np.exp(self.dist.d_init.logp)
+        l_x = self.dist.s_init.logp
+        l_d = self.dist.d_init.logp
         return l_x * l_d
         
     def update(self, E):

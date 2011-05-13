@@ -33,7 +33,7 @@ class Emission():
             observation 
         """
         self.dist[state].set_value(Y)
-        return pb.exp(self.dist[state].logp)
+        return self.dist[state].logp
     
     def sample(self, state):
         """
@@ -74,6 +74,17 @@ class Gaussian(Emission):
         ]
         self.dim = 1
         Emission.__init__(self)
+    
+    def update_new(self,sample):
+        self.dist = [
+            pymc.Normal(
+                'emission_%s'%j, 
+                sample[0][j], 
+                1.0/sample[1][j].flatten()
+            ) 
+            for j in range(len(sample[0]))
+        ]
+    
     
     def update(self, gamma, Y):
         """

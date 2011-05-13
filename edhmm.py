@@ -27,12 +27,8 @@ class Categorical:
     
     def sample(self):
         x = np.random.multinomial(1,self.p)
-        try:
-            return np.where(x==1)[0][0]
-        except IndexError:
-            print x
-            print self.p
-            raise
+        return np.where(x==1)[0][0]
+
 
 class EDHMM:
     """
@@ -178,117 +174,7 @@ class EDHMM:
             [[self.D(i,di) for di in durations] for i in self.states]
         )
     
-    def forward(self,Y,D=None):
-        """
-        forward algorithm as specified by Yu and Kobayashi 2006.
-        
-        Parameters
-        ---------
-        Y : list of np.ndarray
-            data
-        D : np.ndarray, optional
-            duration likelihoods
-        Returns
-        -------
-        alpha : list of np.ndarray
-            forward variable, defined here as p(x_t | y_1 .. y_t)
-        bstar : list of np.ndarray
-            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
-            
-        Notes
-        -----
-        Note that this forward variable is not p(x_t, y_1 .. y_t) which is 
-        usually calculated in the forward algorithm. Note also that the variable
-        calculated here is properly normalised, and hence suffers no scaling
-        issues.  
-        """
-        log.info('running forward algorithm')
-        T = len(Y)
-        alpha = [np.zeros((self.K, len(self.durations))) for y in Y]
-        bstar = [np.zeros((self.K,1)) for y in Y]
-        
-        E = [np.zeros((self.K,1)) for y in Y]
-        S = [np.zeros((self.K,1)) for y in Y]
-        U = np.zeros((self.K,1))
-        
-        if D is None:
-            D = self.duration_likelihood()
-        
-        assert D.shape == alpha[0].shape
-        for t in range(T):
-            if t == 0:
-                alpha[t] = self.pi.pi * D
-            else:
-                # alpha shifted is to vectorise the calculation below
-                # we need alpha[t-1][:,d_index+1]), so shift the whole 
-                # alpha[t-1] matrix to the left, discarding alpha[t-1][:,0]
-                # and then padding with a column of zeros to take care of
-                # the d = self.durations[-1] case
-                alpha_shifted = np.hstack([alpha[t-1][:, 1:], np.zeros((self.K, 1))])
-                alpha[t] = (S[t-1] * D) + (bstar[t-1] * alpha_shifted)
-            
-            # let's just re-normalise to avoid propagating numerical errors
-            assert isprob(alpha[t]), "forward variable should be a valid probability"
-            alpha[t] = alpha[t] / alpha[t].sum()
-            
-            # U = p(y_t|x_t)
-            U[:,0] = np.array([self.O(i,Y[t]) for i in self.states])
-            # rinv = \sum_mn alpha_t(m,d) p(y_t|x_t=m)
-            rinv = (alpha[t] * U).sum()
-            # bstar = p(y_t|x_t=m) / p(y_t|y_1 .. y_t-1)
-            bstar[t] = U / rinv
-            # E = p(x_t, d_t=1 | y_1 ... y_t)
-            E[t][:,0] = alpha[t][:,0] * bstar[t][:,0]
-            # S = p(x_t+1, d_t=1 | y_1 ... y_t)
-            S[t] = np.dot(self.A.A.T,E[t])
-                
-        return alpha, bstar, E, S
-    
-    def backward(self,Y,bstar, D=None):
-        """
-        backward algorithm as specified by Yu and Kobayashi 2006.
-        
-        Parameters
-        ---------
-        Y : list of np.ndarray
-            data
-        bstar : list of np.ndarray
-            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
-        D : np.ndarray, optional
-            duration likelihoods
-        
-        Returns
-        -------
-        beta : list of np.ndarray
-            backward variable
-            
-        Notes
-        -----
-        Note that this backward variable is not p(y_t+1 .. y_T|x_t) which is 
-        usually calculated in the backward algorithm. 
-        """
-        log.info('running backward algorithm')
-        T = len(Y)
-        beta = [np.zeros((self.K, len(self.durations))) for y in Y]
-        Estar = [np.zeros((self.K,1)) for y in Y]
-        if D is None:
-            D = self.duration_likelihood()
-        for t in reversed(xrange(T)):
-            if t == T-1:
-                for d_index, d in enumerate(self.durations):
-                    beta[t][:,d_index] = bstar[t][:,0]
-            else:
-                for d_index, d in enumerate(self.durations):
-                    if d == 1:
-                        beta[t][:,d_index] = bstar[t][:,0] * Sstar[:,0]
-                    else:
-                        beta[t][:,d_index] = beta[t+1][:, d_index-1] * bstar[t][:,0]
-            Estar[t][:,0] = (D * beta[t]).sum(1)
-            Sstar = np.zeros((self.K,1))
-            for j in self.states:
-                for i in self.states:
-                    Sstar[j,0] += Estar[t][i,0] * self.A.A[j,i]
-        return beta, Estar
+
     
     @types(Y=list)
     def forward_backward(self,Y,D=None):
@@ -341,11 +227,14 @@ class EDHMM:
     
     def slice_sample(self,Z):
         log.info('forming slice')
-        u = []
-        for s,d in Z:
-            l = self.D(s,d)
+        u = [0.0001]
+        for t in range(1,len(Z)):
+            i = Z[t-1][0]
+            j = Z[t][0]
+            di  = Z[t-1][1]
+            l = self.A[j,i] * pb.exp(self.D(i,di))
             u.append(np.random.uniform(low=0, high=l))
-            assert u[-1] < l
+            #assert u[-1] < l, (l,u,self.A[j,i])
         return np.array(u)
     
     def worthy_transitions(self, U):
@@ -354,32 +243,71 @@ class EDHMM:
         l,r = zip(*[self.D.support(i) for i in self.states])
         worthy = [None for u in U]
         for t,u_t in enumerate(U):
+            #print "u_t: %s"%u_t
             worthy[t] = {}
             for i in self.states:
                 for di in range(1,r[i]+1):
                     for j in self.states:
                         for dj in range(1,r[j]+1):
-                            # so for every possible state duration pair, we 
-                            # calculate the probability `l` of transition from the
-                            # previous state (j,dj) to the current state (i,di).
-                            if dj == 1:
-                                l = self.A[j,i] * self.D(i,di) 
+                            # the restriction below enforces consistency between pairs:
+                            # we only consider those transitions that are possible from 
+                            # t-1 
+                            if t > 0: 
+                                
+                                if (j,dj) in worthy[t-1]: 
+                                    # so for every possible state duration pair, we 
+                                    # calculate the probability `l` of transition from the
+                                    # previous state (j,dj) to the current state (i,di).
+                                    if dj == 1:
+                                        l = self.A[j,i] * pb.exp(self.D(i,di))
+                                    else:
+                                        if i==j and dj != 1 and di==dj-1:
+                                            l = 1
+                                        else:
+                                            l = 0
+                                    # if the probaility `l` is greater than u_t then we 
+                                    # add that pair to our dictionary of worthy. The 
+                                    # dictionary's keys index the alphas we will
+                                    # calculate at time t, and the values of the 
+                                    # dictionary are the indices into alpha at time t-1
+                                    # that we need to sum over.
+                            
+                                    if l > u_t:
+                                        try:
+                                            worthy[t][(i,di)].append((j,dj))
+                                        except KeyError:
+                                            worthy[t][(i,di)] = [(j,dj)]
                             else:
-                                if i==j and dj != 1 and di==dj-1:
-                                    l = 1
+                                if dj == 1:
+                                    l = self.A[j,i] * np.exp(self.D(i,di))
+                                    #print "l at the transition: %s"%l 
                                 else:
-                                    l = 0
-                            # if the probaility `l` is greater than u_t then we 
-                            # add that pair to our dictionary of worthy. The 
-                            # dictionary's keys index the alphas we will
-                            # calculate at time t, and the values of the 
-                            # dictionary are the indices into alpha at time t-1
-                            # that we need to sum over.
-                            if l > u_t:
-                                try:
-                                    worthy[t][(i,di)].append((j,dj))
-                                except KeyError:
-                                    worthy[t][(i,di)] = [(j,dj)]
+                                    if i==j and dj != 1 and di==dj-1:
+                                        l = 1
+                                    else:
+                                        l = 0
+                                # if the probaility `l` is greater than u_t then we 
+                                # add that pair to our dictionary of worthy. The 
+                                # dictionary's keys index the alphas we will
+                                # calculate at time t, and the values of the 
+                                # dictionary are the indices into alpha at time t-1
+                                # that we need to sum over.
+                        
+                                if l > u_t:
+                                    try:
+                                        worthy[t][(i,di)].append((j,dj))
+                                    except KeyError:
+                                        worthy[t][(i,di)] = [(j,dj)]
+            try:
+                assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
+            except AssertionError:
+                for i in self.states:
+                    for j in self.states:
+                        for di in range(1,r[i]+1):
+                            l = self.A[j,i] * np.exp(self.D(i,di)).round(3)
+                            print "%s, %s, %s : %s"%(i,j,di,l)
+                raise
+                
         return worthy
             
     def beam_forward_new(self, Y, U=None, W=None):        
@@ -392,6 +320,7 @@ class EDHMM:
                
         for t,(y,worthy) in enumerate(zip(Y,W)):
             if t == 0:
+                # TODO this should be restricted
                 for i in self.states:
                     alphahat[t][i] = {}
                     for d in range(1,r[i]+10):
@@ -422,24 +351,21 @@ class EDHMM:
                             # that alphahat[t-1][state][duration] was zero, so
                             # we can just ignore it
                             pass
-                    try:        
-                        alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
-                    except KeyError:
-                        print alphahat[t][i[0]][i[1]]
-                        raise
+                    
+                    alphahat[t][i[0]][i[1]] *= self.O(i[0],y)
+
                 
                 # find sum(alpha[t])
                 n = 0
-                for i in self.states:
+                for i in alphahat[t]:
                     for v in alphahat[t][i].values():
                         n += v
-                assert n, alphahat[t-1]
+                        
+                assert n, (n, W[:t+4])
                 # normalise
-                for i in self.states:
+                for i in alphahat[t]:
                     for d in alphahat[t][i].keys():
                         alphahat[t][i][d] /= n
-            
-        print len(W)
         return alphahat
     
     def beam_backward_sample_new(self, alphahat, W):
@@ -493,15 +419,18 @@ class EDHMM:
         assert len(Z) == len(Y)
         D_sample = self.sample_D(Z)
         A_sample = self.sample_A(Z)
+        O_sample = self.sample_O(Z,Y)
         count = 0
         
         A = []
         D = []
+        O = []
         
         while not bored:
             
             self.A.update_new(A_sample)
             self.D.update_new(D_sample)
+            self.O.update_new(O_sample)
             
             U = self.slice_sample(Z)
             assert len(U) == len(Y)
@@ -519,6 +448,7 @@ class EDHMM:
             
             D_sample = self.sample_D(Z)
             A_sample = self.sample_A(Z)
+            O_sample = self.sample_O(Z,Y)
             
             count +=1
             if count > 100:
@@ -526,9 +456,10 @@ class EDHMM:
             
             A.append(A_sample)
             D.append(D_sample)
+            O.append(O_sample)
             
         
-        return A, D
+        return A, D, O
     
     def beam_forward(self, Y, u=None):
         
@@ -629,6 +560,46 @@ class EDHMM:
         M.sample(iter=101,burn=100)
         samples = np.array([M.trace('mu_%s'%i)[:] for i in self.states])
         return samples.flatten()
+    
+    def sample_O(self, Z, Y):
+        log.info('sampling from O')
+        # lets gather all the observations associated with each state
+        X = [z[0] for z in Z]
+        n = [[] for i in self.states]
+        now = X[0]
+        for t,s in enumerate(X):
+            n[now].append(np.array([Y[t]]))
+            if now != s:
+                now = s
+        
+        mu_prior = [
+            pymc.Normal('mu_%s'%i, 0, 10)
+            for i in self.states
+        ]
+        cov_prior = [
+            pymc.InverseWishart(
+                'sigma_%s'%i,n = self.O.dim, 
+                Tau = np.eye(self.O.dim)
+            )
+            for i in self.states
+        ]
+        O = [
+            pymc.MvNormalCov(
+                'emission_%s'%j, 
+                mu_prior[j], 
+                cov_prior[j], 
+                value=n[j], 
+                observed=True
+            ) 
+            for j in self.states
+        ]
+        model = pymc.Model({"sigma":cov_prior, "mu":mu_prior, "O":O})
+        M=pymc.MCMC(model)
+        M.sample(iter=101,burn=100)
+        mu_sample = np.array([M.trace('mu_%s'%i)[:] for i in self.states])
+        sigma_sample = np.array([M.trace('sigma_%s'%i)[:] for i in self.states])
+        return mu_sample, sigma_sample
+        
     
     def sample_A(self, Z):
         log.info('sampling from A')

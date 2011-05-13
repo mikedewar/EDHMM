@@ -24,16 +24,28 @@ pi = Initial(K=3,beta=0.001)
 m = edhmm.EDHMM(A,O,D,pi)
 X,Y,Dseq = m.sim(T)
 
-if False:
+if True:
     # set the above to true for some awesome testing action!
-    U = [np.random.uniform(0,0.0000001) for y in Y]
+    U = [np.random.uniform(0,0.01) for y in Y]
     W = m.worthy_transitions(U)
     alpha = m.beam_forward_new(Y, W=W)
     Z = m.beam_backward_sample_new(alpha,W)
     D_sample = m.sample_D(Z)
     A_sample = m.sample_A(Z)
+    O_sample = m.sample_O(Z,Y)
+else:
+    A,D,O = m.beam_new(Y)
+    
 
-A,D = m.beam_new(Y)
+    D = pb.array(D)
+    pb.subplot(1,3,1)
+    pb.hist(D[:,0])
+    pb.subplot(1,3,2)
+    pb.hist(D[:,1])
+    pb.subplot(1,3,3)
+    pb.hist(D[:,2])
+    pb.show()
+
 
 #pp.pprint(W)
 #pp.pprint(alpha)

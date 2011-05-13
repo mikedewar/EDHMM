@@ -29,7 +29,7 @@ class Duration(object):
         under the model
         """
         self.dist[state].set_value(duration)
-        return np.exp(self.dist[state].logp)
+        return self.dist[state].logp
     
     def sample(self, state):
         """
@@ -140,7 +140,7 @@ class Poisson(Duration):
         d, dl = mu, 1
         lold = self(state,d)
         while dl > threshold:
-            lnew = self(state,d)
+            lnew = pb.exp(self(state,d))
             dl = abs(lnew-lold)
             lold = lnew
             d -= 1
@@ -150,7 +150,7 @@ class Poisson(Duration):
         lold = self(state,d)
         while dl > threshold:
             d += 1
-            lnew = self(state,d)
+            lnew = pb.exp(self(state,d))
             dl = abs(lnew-lold)
             lold = lnew
         right = d
