@@ -123,108 +123,6 @@ class EDHMM:
             D.append(d)
         return X, Y, D
     
-    def expected_log_likelihood(self,gamma,Y,Dcal):
-
-        def ln(x):
-            assert np.all(x>0)
-            return np.nan_to_num(np.log(x))
-
-        log.debug('calculating the expected log likelihood')
-        X = [np.sum(g,1) for g in gamma]
-        D = [np.sum(d,0) for d in Dcal]
-        duration_likelihood = self.duration_likelihood()
-        l = np.dot(X[0],ln(self.pi.pi))
-        assert not np.isnan(l),  np.dot(X[0],ln(self.pi.pi))
-        for x,xi,y,d in zip(X[1:],X[:-1],Y[1:],D[1:]):
-            l += np.dot(xi, np.dot(ln(self.A.A), x))
-            assert not np.isnan(l),  np.dot(xi, np.dot(ln(self.A.A), x))
-            l += np.dot([ln(self.O(i,y)) for i in self.states], x)
-            assert not np.isnan(l), np.dot([ln(self.O(i,y)) for i in
-                                            self.states], x)
-            l += np.dot(x, np.dot(duration_likelihood, d))
-            assert not np.isnan(l),  np.dot(x, np.dot(duration_likelihood, d))
-        return l[0]
-    
-    def duration_likelihood(self,durations=None):
-        """
-        Calculates the duration likelihood per state per duration
-        
-        Parameters
-        ----------
-        durations : list, optional
-            durations over which to calulate likelihoods
-        
-        Returns
-        -------
-        D : np.ndarray
-            K x d array, where the i,j th element is the likleihood of the 
-            duration j in given that we're in state i. Here d is the length
-            of the durations list.
-            
-        Notes
-        -----
-        If you specify a durations list, then the resulting matrix will be the
-        likelihood of each duration in the list. Otherwise self.durations will
-        be used. 
-        """
-        log.info('calculating duration likelihood')
-        if durations is None:
-            durations = self.durations
-        return np.array(
-            [[self.D(i,di) for di in durations] for i in self.states]
-        )
-    
-
-    
-    @types(Y=list)
-    def forward_backward(self,Y,D=None):
-        """
-        Forward Backward algorithm.
-        
-        Parameters
-        ---------
-        Y : list of np.ndarray
-            data
-        bstar : list of np.ndarray
-            p(y_t|x_t) / p(y_t|y_1 .. y_t-1)
-        D : np.ndarray, optional
-            duration likelihoods
-        """
-        if D is None:
-            D = self.duration_likelihood()
-        alpha, bstar, E, S = self.forward(Y,D)
-        beta, Estar = self.backward(Y,bstar,D)
-        gamma = [f*b for f,b in zip(alpha,beta)]
-        assert all([a.sum() for a in gamma])
-        Tcal = [np.zeros((self.K,self.K)) for y in Y]
-        Dcal = [np.zeros((self.K,len(self.durations))) for y in Y]
-        for t in range(1,len(Y)):
-            for i in self.states:
-                for j in self.states:
-                    Tcal[t][i,j] = E[t-1][i] * self.A.A[i,j] * Estar[t][j]
-        for t in range(1,len(Y)):
-            for i in self.states:
-                for d_index,d in enumerate(self.durations):
-                    Dcal[t][i,d_index] = S[t-1][i,0] * D[i,d_index] * beta[t][i,d_index]
-        return gamma, Tcal, Estar, Dcal
-    
-    def backward_sample(self, alpha):
-        """
-        Samples a state sequence, in reverse order, given the forward variable
-        """
-        T = len(alpha)
-        s = Categorical(alpha[-1].sum(1)).sample()
-        d_index = Categorical(alpha[-1][s,:]).sample()
-        d = self.durations[d_index]
-        for t in reversed(xrange(T-1)):
-            yield s,d
-            if d > 1:
-                d -= 1
-            else:
-                s = Categorical(alpha[t].sum(1)*self.A.A[:,s]).sample()
-                d = Categorical(alpha[t][s,:]).sample() + 1 # note the +1!
-        yield s,d
-    
     def slice_sample(self,Z):
         log.info('forming slice')
         u = [0.0001]
@@ -310,7 +208,7 @@ class EDHMM:
                 
         return worthy
             
-    def beam_forward_new(self, Y, U=None, W=None):        
+    def beam_forward(self, Y, U=None, W=None):        
         # initialise alphahat
         alphahat = [{} for y in Y]
         l,r = zip(*[self.D.support(i) for i in self.states])
@@ -368,7 +266,7 @@ class EDHMM:
                         alphahat[t][i][d] /= n
         return alphahat
     
-    def beam_backward_sample_new(self, alphahat, W):
+    def beam_backward_sample(self, alphahat, W):
         
         def sample_z(a):
             xi = Categorical(
@@ -408,14 +306,14 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam_new(self,Y):
+    def beam(self,Y):
         U = [np.random.uniform(0,0.0000001) for y in Y]
         bored = False
         # run once to get samples 
         W = self.worthy_transitions(U)
-        alpha = self.beam_forward_new(Y, W=W)
+        alpha = self.beam_forward(Y, W=W)
         assert len(alpha) == len(Y)
-        Z = self.beam_backward_sample_new(alpha,W)
+        Z = self.beam_backward_sample(alpha,W)
         assert len(Z) == len(Y)
         D_sample = self.sample_D(Z)
         A_sample = self.sample_A(Z)
@@ -436,12 +334,12 @@ class EDHMM:
             assert len(U) == len(Y)
             W = self.worthy_transitions(U)
             try:
-                alpha = self.beam_forward_new(Y, W=W)
+                alpha = self.beam_forward(Y, W=W)
             except:
                 print "Normalisation failed in alpha. Rejecting this sample."
                 pass
             try:
-                Z = self.beam_backward_sample_new(alpha,W)
+                Z = self.beam_backward_sample(alpha,W)
             except KeyError:
                 print "Tried to sample an impossible state sequence. Rejecting this sample."
                 pass
@@ -460,79 +358,6 @@ class EDHMM:
             
         
         return A, D, O
-    
-    def beam_forward(self, Y, u=None):
-        
-        log.info('running forward algorithm w/ slice sampling')
-        
-        T = len(Y)
-        E = np.zeros((self.K,1))
-        U = np.zeros((self.K,1))
-        
-        if u is None:
-            S, Z, D_seq = self.sim(len(Y)) # ignore Z
-            u = self.slice_sample(S,D_seq)
-                
-        assert len(u) == T, len(u)
-        
-        #### <HACK>
-        log.debug('finding max duration for current iteration')
-        max_d = 1
-        for i in self.states:
-            # TODO this won't work for non-Poisson distributions
-            # better ways to choose a starting d for this little search?
-            d = self.D.dist[i].parents['mu']
-            while self.D(i,d) > min(u):
-                d += 1
-            max_d = max(d,max_d)
-        durations = range(1,max_d+10)
-        log.debug('found max duration: %s'%(max_d+10))
-        #### <\HACK>         
-        
-        alpha = [np.zeros((self.K, len(durations))) for y in Y]
-        bstar = [np.zeros(self.K) for y in Y]
-        
-        D0 = self.duration_likelihood(durations)
-        for t,ut in enumerate(u):
-            assert ut < D0.max(), (t,ut,D0.max())
-        
-        log.debug('starting forward recursion')
-        for t in range(T):
-            # D is repeatedly pruned depending on the value of u[t]
-            # this sets D with likelihoods greater than the threshold to zero
-            # the alternative and probably better way to do this is to keep
-            # evaluating the likelihood until it drops below some value. Not
-            # sure though...
-            D = D0 * (D0 > u[t])
-            if t == 0:
-                alpha[t] = self.pi.pi * D
-            else:
-                alpha_shifted = np.hstack(
-                    [alpha[t-1][:, 1:], np.zeros((self.K, 1))]
-                )
-                alpha[t] = (S * D) + (bstar[t-1] * alpha_shifted)
-            
-            U[:,0] = np.array([self.O(i,Y[t]) for i in self.states])
-            rinv = (alpha[t] * U).sum()
-            bstar[t] = U / rinv
-            E[:,0] = alpha[t][:,0] * bstar[t][:,0]
-            S = np.dot(self.A.A.T,E)
-            alpha[t] = alpha[t] / alpha[t].sum()
-        return alpha, bstar       
-    
-    def beam(self, Y, S=None, Dseq=None, its = 100, burn_in=20):
-        if S == None or Dseq == None:
-            S, Z, Dseq = self.sim(len(Y)) # ignore Z
-        Sout, Dout = [], []
-        for i in range(its):
-            log.info("beam iteration: %s of %s"%(i,its))
-            U = self.slice_sample(S,Dseq)
-            alpha, bstar = self.beam_forward(Y,U)
-            S,D = zip(*[(s,d) for (s,d) in self.backward_sample(alpha)])
-            if i > burn_in:
-                Sout.append(S)
-                Dout.append(D)
-        return Sout, Dout
     
     def sample_D(self,Z):
         log.info('sampling from D')
@@ -637,84 +462,6 @@ class EDHMM:
         samples = np.array([M.trace('p_%s'%i)[:] for i in self.states])
         return samples.reshape((self.K, self.K-1))
         
-    
-    def update(self, gamma, Tcal, Estar, Y, Dcal):
-        log.info('updating parameters')        
-        self.A.update(Tcal)
-        self.pi.update(Estar)
-        self.O.update(gamma,Y)
-        self.D.update(Dcal)
-    
-def baum_welch(Y,K,stopping_threshold=0.001,multiple_restarts=10):
-    model_store = []
-    l_end_store = []
-    l_store = []
-    for restart in range(multiple_restarts):
-        m = initialise_EDHMM(Y, K)
-        l = [-100000]
-        it = 1
-        delta_l = 10000
-        while abs(delta_l) > stopping_threshold:
-            D = m.duration_likelihood()
-            gamma, Tcal, Estar, Dcal = m.forward_backward(Y, D)
-            m.update(gamma, Tcal, Estar, Y, Dcal)
-            log.debug('finished BW iteration %s'%it)
-            it += 1
-            m.report()
-            l.append(m.expected_log_likelihood(gamma, Y, Dcal))
-            delta_l = l[-1]-l[-2]
-            log.debug("change in likelihood: %s"%delta_l)
-            if delta_l < 0:
-                log.warn("negative change in likelihood!")
-        print "\n\n"
-        model_store.append(m)
-        l_store.append(l[1:])
-        l_end_store.append(l[-1])
-    log.debug('final likelihoods: %s'%l_end_store)
-    i = l.index(max(l))    
-    return model_store[i], l_store[i]
-    
-def initialise_EDHMM(Y,K):
-    log.info("initialising new EDHMM")
-    pi = Initial(np.array([1./K for k in range(K)]))
-    # some random matrix with zeros on the diagonal
-    A = (np.ones((K,K)) - np.eye(K))*np.random.random((K,K))
-    # normalise rows
-    A = (A.T / A.sum(1)).T
-    A = Transition(A)
-    # for the initial means just do a quick k-means...
-    T = len(Y)
-    try:
-        N = Y[0].shape[0]
-    except IndexError:
-        N = 1
-    Y = np.array(Y)
-    Y.shape = (T,N)
-    book, distortion = scipy.cluster.vq.kmeans(Y,K)
-    means = list(book.flatten())
-    # find the variances of the data that's been clustered using kmeans
-    code, dist = scipy.cluster.vq.vq(Y,book)
-    precisions = [1/np.var(Y[code==k]) for k in range(K)]
-    O = Gaussian(means,precisions)
-    # estimate the durations from the kmeans code book
-    dmax = np.zeros(K)
-    for k in range(K):
-        this_duration = 0
-        for c in code:
-            if c==k:
-                this_duration += 1
-            else:
-                dmax[k] = max(this_duration, dmax[k])
-                this_duration = 0
-    D = Poisson(dmax)
-    return EDHMM(A,O,D,pi)
-    
-
-@types(models=list)
-def average_models(self,models):
-    pass
-
-    
 if __name__ == "__main__":
     import sys
     import logging
