@@ -26,9 +26,27 @@ class Transition:
                 "invalid transition matrix:\n%s, \n%s"%(A, sum(row))
         self.A = A
         self.shape = A.shape
+        self.K = A.shape[0]
+        self.states = range(self.K)
+        
+        p = np.zeros((self.K, self.K))
+        for i in self.states:
+            for j in self.states:
+                if i!=j:
+                    p[i,j] = 1.0/(self.K-1)
+        # add a little bit to everywhere and renormalise
+        p+=0.05
+        for row in p:
+            row /= row.sum()
+        
+        Ps = [
+            pymc.Dirichlet("p_%s"%i, p[i])
+            for i in self.states
+        ]
+        
         self.dist = [
-            pymc.Categorical("transition from %s"%i, a)
-            for i, a in enumerate(A)
+            pymc.Categorical('A_%s'%i, Ps[i])
+            for i in self.states
         ]
     
     def __getitem__(self,key):
@@ -45,12 +63,22 @@ class Transition:
     
     def sample(self,i):
         return self.dist[i].random()
-
-    def update(self,P):
-        self.dist = [
-            pymc.Categorical("transition from %s"%i, p)
-            for i, p in enumerate(P)
-        ]
+        
+    def update_parameters(self,p):
+        pass
+    
+    def update_observations(self,Z):
+        X = [z[0] for z in Z]
+        n = [[] for i in self.states]
+        now = X[0]
+        for s in X:
+            if now != s:
+                n[now].append(s)
+                now = s
+        
+    
+    def update(self,Z):
+        pass
     
     def report(self):
         log.info("transition matrix:\n%s"%self.A.round(4))

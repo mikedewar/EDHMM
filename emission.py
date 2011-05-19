@@ -1,6 +1,7 @@
 import pymc
 from utils import types
 import pylab as pb
+import numpy as np
 import logging
 log = logging.getLogger('emission')
 
@@ -10,16 +11,6 @@ class Emission():
     Class describing an arbitrary output distribution. You should overload 
     self.likelihood and self.sample to make a new distribution.
     """
-    def __init__(self):
-        # every Emission distribution should have a dist attribute, which
-        # should be a pymc.Stochastic object
-        assert all(
-            [
-                isinstance(dist_i, pymc.Stochastic) 
-                for dist_i in self.dist
-            ]
-        ) , self.dist
-        assert type(self.dim) is int, self.dim
     
     def likelihood(self, state, Y):
         """
@@ -32,8 +23,8 @@ class Emission():
         Y: float, list or array
             observation 
         """
-        self.dist[state].set_value(Y)
-        return self.dist[state].logp
+        self.M.dist[state].value = Y
+        return self.M.dist[state].logp
     
     def sample(self, state):
         """
@@ -44,6 +35,7 @@ class Emission():
         state: int
             state of the EDHMM
         """
+        self.M.dist[state].observed = False
         return self.dist[state].random()
     
     def update(self, sample):
@@ -62,36 +54,93 @@ class Emission():
             return self.likelihood(state, Y)
     
     def __len__(self):
-        return len(self.dist)
+        return len(self.M.dist)
 
 class Gaussian(Emission):
     
-    @types(means=list, precisions=list)
-    def __init__(self, means, precisions):
-        self.dist = [
-            pymc.Normal('emission_%s'%j, mean, precision) 
-            for j,(mean, precision) in enumerate(zip(means, precisions))
+    def __init__(self, mu, alpha, beta, prior_mean, prior_precision, observations=None):
+        
+        assert len(mu) == len(alpha)
+        assert len(mu) == len(beta)
+        assert len(mu) == len(prior_mean)
+        assert len(mu) == len(prior_precision)
+        
+        states = range(len(mu))
+        
+        self.mu = mu
+        self.alpha = alpha
+        self.beta = beta
+        self.prior_mean = prior_mean
+        self.prior_precision = prior_precision
+        
+        mean = [
+            pymc.Normal('mean_%s'%i, mu[i], 0.1)
+            for i in states
         ]
+        precision = [
+            pymc.Gamma('prec_%s'%i, alpha[i], beta[i])
+            for i in states
+        ]
+        if observations:
+            dist = [
+                pymc.Normal(
+                    'emission_%s'%j, 
+                    mean[j], 
+                    precision[j],
+                    values=observations[j],
+                    observed = True
+                ) 
+                for j in states
+            ]
+        else:
+            dist = [
+                pymc.Normal('emission_%s'%j, mean[j], precision[j]) 
+                for j in states
+            ]
         self.dim = 1
-        Emission.__init__(self)
+        self.M = pymc.MCMC(pymc.Model(
+            {
+                'dist': dist, 
+                'precision': precision,
+                'mean' : mean
+            }
+        ))
     
-    def update(self,sample):
-        self.dist = [
-            pymc.Normal(
-                'emission_%s'%j, 
-                sample[0][j], 
-                1.0/sample[1][j].flatten()
-            ) 
-            for j in range(len(sample[0]))
-        ]
+    def update_parameters(self, prior_mean, prior_precision):
+        return Gaussian(
+            mu=self.mu,
+            alpha=self.alpha,
+            beta=self.beta,
+            prior_mean = prior_mean,
+            prior_precision = prior_precision
+        )
+    
+    def update_observations(self,Z,Y):
+        X = [z[0] for z in Z]
+        states = pb.unique(X)
+        states.sort()
+        n = dict([(i,[]) for i in states])
+        for t,s in enumerate(X):
+            n[s].append(np.array([Y[t]]))
+        
+        return Gaussian(
+            mu=self.mu,
+            alpha=self.alpha,
+            beta=self.beta,
+            prior_mean = self.prior_mean,
+            prior_precision = self.prior_precision,
+            observations = n
+        )
+        
+    def update(self,Z,Y):
+        log.info('updating O')
+        O = self.update_observations(Z,Y)
+        mean, precision = O.sample_parents()
+        O = O.update_parameters(mean, precision)
+        return O, mean, precision
     
     def report(self):
-        log.info(
-            'means:\n%s'%[round(p.parents['mu'],4) for p in self.dist]
-        )
-        log.info(
-            'precisions:\n%s'%[round(p.parents['tau'],4) for p in self.dist]
-        )
+        pass
     
     def plot(self,x):
         y = pb.zeros(len(x))
@@ -100,6 +149,24 @@ class Gaussian(Emission):
                 y[i] += self.likelihood(k, xi)
         pb.plot(x,y)
         pb.show()
+    
+    def sample_parents(self):
+        self.M.sample(iter=101,burn=100)
+        states = range(len(self.M.mean))
+        means = np.array(
+            [self.M.trace('mean_%s'%i)[:] for i in states]
+        ).flatten()
+        precisions = np.array(
+            [self.M.trace('prec_%s'%i)[:] for i in states]
+        )
+        return means, precisions
+    
+    def sample_from_prior(self,state):
+        self.M.mean[state].observed = False
+        self.M.mean[state].value = self.prior_mean[state]
+        self.M.precision[state].observed = False
+        self.M.precision[state].value = self.prior_precision[state]
+        return self.M.dist[state].random()
 
 class MultivariateGaussian(Emission):
     
@@ -114,10 +181,29 @@ class MultivariateGaussian(Emission):
 
 if __name__ == "__main__":
     O = Gaussian(
-        means=[-5,1],
-        precisions=[1,1]
+        mu=[-10,0,10],
+        alpha=[1,1,1],
+        beta=[1,1,1],
+        prior_mean = [-10,0,10],
+        prior_precision = [1,1,1]
     )
-    O = MultivariateGaussian(
-        means=[[0,0],[1,1]],
-        covariances=[[[1,0],[0,1]],[[1,0],[0,1]]]
+    
+    Z = np.load('Z.npy')
+    Y = np.load('Y.npy')
+    
+    O.update(Z,Y)
+    
+    print O.M.dist[0].value
+    
+    print O.likelihood(Z[0][0],Y[0])
+    
+    pb.hist(
+        [
+            O.sample_from_prior(j) 
+            for i in range(1000) 
+            for j in range(3)
+        ],
+        bins=100
     )
+    pb.show()
+    

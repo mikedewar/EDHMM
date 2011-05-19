@@ -12,36 +12,38 @@ class Duration(object):
     you need to provide a K-length list of vald pymc.Stochastic objects in the
     as the `dist` attribute, before calling Duration.__init__().
     """
-    def __init__(self):
-        # every Duration distribution should have a dist attribute, which
-        # should be a pymc.Stochastic object
-        assert all(
-            [
-                isinstance(dist_i, pymc.Stochastic) 
-                for dist_i in self.dist
-            ]
-        ) , self.dist
     
     def likelihood(self, state, duration):
         """
         returns the log likelihood of the duraiton given the current state 
         under the model
         """
-        self.dist[state].set_value(duration)
-        return self.dist[state].logp
+        self.prior[state].value = duration
+        return self.prior[state].logp
     
     def sample(self, state):
         """
         returns a sampled duration from the model
         """
         try:
-            return np.ceil(self.dist[state].random())
+            return np.ceil(self.M.dist[state].random())
         except IndexError:
             print "your sampling Duration distribution is throwing an index error."
             print "\tthe state chosen is: %s"%state
             print "\tand the expected max is: %s"%(len(self)-1)
             raise
     
+    def sample_parents(self):
+        """
+        draws a sample from the parameters
+        """
+        self.M.sample(iter=101, burn=100)
+        samples = np.array(
+            [self.M.trace('mu_%s'%i)[:] for i in self.states]
+        ).flatten()
+        return samples
+
+        
     def plot(self):
         raise NotImplementedError
     
@@ -58,7 +60,7 @@ class Duration(object):
             return self.likelihood(state, duration)
     
     def __len__(self):
-        return len(self.dist)
+        return len(self.M.dist)
 
 
 class LogNormal(Duration):
@@ -71,37 +73,93 @@ class LogNormal(Duration):
         ]
         Duration.__init__(self)
 
+
 class Poisson(Duration):
     "Poisson Duration distribution"
     
-    def __init__(self, lambdas):
+    def __init__(self, alpha, beta, prior_mu, observations=None):
         """
         Parameters
         ---------
         mus: list
             list of rate parameters, one per state
         """
-        self.dist = [
-            pymc.Poisson('duration_%s'%j,l)
-            for j,l in enumerate(lambdas)
+        assert len(alpha) == len(beta)
+        assert len(alpha) == len(prior_mu)
+        if observations:
+            assert len(alpha) == len(observations), (len(alpha),len(observations),observations)
+        
+        self.alpha = alpha
+        self.beta = beta
+        self.prior_mu = prior_mu
+        self.states = range(len(alpha))
+        mus = [
+            pymc.Gamma("mu_%s"%i, alpha=alpha[i], beta=beta[i])
+            for i in range(len(alpha))
         ]
-        Duration.__init__(self)
+        if observations:
+            try:
+                dist = [
+                    pymc.Poisson('dist_%s'%j,l,observed=True,value=observations[j])
+                    for j,l in enumerate(mus)
+                ]
+            except IndexError:
+                print observations
+                print mus
+                raise
+        else:
+            dist = [
+                pymc.Poisson('dist_%s'%j,l,observed=True)
+                for j,l in enumerate(mus)
+            ]
+        self.prior = [
+            pymc.Poisson('dist_%s'%j,prior_mu[j])
+            for j,l in enumerate(mus)
+        ]
+        self.M = pymc.MCMC(pymc.Model({'dist':dist, 'mu':mus}))
     
     def report(self):
-        log.debug(
-            'duration parameters:\n%s'%
-            [round(p.parents['mu'],2) for p in self.dist]
+        pass
+    
+    def update_observations(self, Z):
+        
+        X = [z[0] for z in Z]
+        durations = dict([(i,[]) for i in self.states])
+        now = X[0]
+        for s in X:
+            if now == s:
+                try:
+                    durations[now][-1] += 1
+                except IndexError:
+                    # initial condition
+                    durations[now] = [1]
+            else:
+                now = s
+                durations[now].append(1)
+        
+        return Poisson(
+            alpha=self.alpha, 
+            beta=self.beta, 
+            prior_mu=self.prior_mu,
+            observations = durations
         )
     
-    def update(self,mu):
-        self.dist = [
-            pymc.Poisson('duration_%s'%j,l)
-            for j,l in enumerate(mu)
-        ]
+    def update_parameters(self, prior_mu):
+        return Poisson(
+            alpha=self.alpha, 
+            beta=self.beta, 
+            prior_mu=prior_mu,
+        )
+    
+    def update(self,Z):
+        log.info('updating D')
+        D = self.update_observations(Z)
+        mu = D.sample_parents()
+        D = D.update_parameters(mu)
+        return D, mu
     
     def plot(self, max_duration=30):
-        num_states = len(self.dist)
-        for j in range(num_states):
+        for j in self.states:
             pb.subplot(num_states, 1, j+1)
             pb.plot(
                 range(1, max_duration+1),
@@ -110,7 +168,7 @@ class Poisson(Duration):
             )
     
     def support(self, state, threshold=0.001):
-        mu = self.dist[state].parents['mu']
+        mu = self.M.dist[state].parents['mu'].value
         # walk left
         d, dl = mu, 1
         lold = self(state,d)
@@ -130,4 +188,27 @@ class Poisson(Duration):
             lold = lnew
         right = d
         return int(left), int(right)
-        
+    
+    def sample_from_prior(self,state):
+        return self.prior[state].random()
+    
+
+if __name__ == "__main__":
+    Z = np.load('Z.npy')
+    Y = np.load('Y.npy')
+    D = Poisson(alpha=[3,3,3], beta=[4,4,4], prior_mu=[3,5,10])
+    D = D.update_observations(Z)
+    mu = D.sample_parents()
+    D = D.update_parameters(mu)
+    
+    for j in range(3):
+        pb.hist(
+            [
+                D.sample_from_prior(j) 
+                for i in range(1000) 
+            ],
+            bins=20,
+            alpha=0.5
+            
+        )
+    pb.show()
