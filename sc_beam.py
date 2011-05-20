@@ -29,11 +29,11 @@ O = Gaussian(
     mu = [-10, 0, 10], 
     tau = [np.array([[3]]),np.array([[3]]),np.array([[3]])]
 )
-D = Poisson(mu = [3,5,10], alpha=[3,3,3], beta=[4,4,4])
+D = Poisson(mu = [3,5,10], alpha=[3,3,3], beta=[0.8,0.5,0.25])
 pi = Initial(K=3,beta=0.001)
 m = EDHMM(A,O,D,pi)
 
-T = 100
+T = 1000
 
 X,Y,Dseq = m.sim(T)
 

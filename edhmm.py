@@ -366,6 +366,7 @@ class EDHMM:
             O_precisions.append(self.O.tau)
             log.debug("O precisions: %s"%O_precisions[-1])
             D_mus.append(self.D.mu)
+            log.debug("D rates: %s"%D_mus[-1])
             Zs = [Z_sample]
             # stop
             if count > maxits:
