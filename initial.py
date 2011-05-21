@@ -39,6 +39,10 @@ class Initial:
         return x, d
     
     def likelihood(self, z):
+        
+        assert z[0] in range(self.K)
+        assert z[1] > 0, z
+        
         self.dist.s_init.set_value(z[0])
         self.dist.d_init.set_value(z[1])
         l_x = self.dist.s_init.logp

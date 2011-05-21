@@ -1,7 +1,7 @@
 import numpy as np
 import logging
 import pymc
-
+import copy
 import time
 
 import pprint
@@ -126,77 +126,63 @@ class EDHMM:
     def worthy_transitions(self, U):
         log.info('calculating transitions worthy of u')
         # find those z_t and z_t-1 that are worthy, given u
-        l,r = zip(*[self.D.support(i) for i in self.states])
+        left,right = zip(*[self.D.support(i) for i in self.states])
         worthy = [None for u in U]
         
-        # pre-calculate likelihoods
-        A_l = np.zeros((self.K,self.K))
+        l = {}
         for i in self.states:
             for j in self.states:
-                A_l[i,j] = self.A.likelihood(i,j)
+                for di in range(min(left),max(right)+1):
+                    l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
         
-        D_l = np.zeros((self.K, max(r)+1))
-        for i in self.states:
-            for di in range(1,max(r)+1):
-                D_l[i,di] = self.D.likelihood(i,di)
+        worthy[0] = {}
+        for j in self.states:
+            for dj in range(left[j],right[j]+1):
+                if dj == 1:
+                    for i in self.states:
+                        for di in range(left[i],right[i]+1):
+                            if l[(i,j,di)] > U[0]:
+                                try:
+                                    worthy[0][(i,di)].append((j,dj))
+                                except KeyError:
+                                    worthy[0][(i,di)] = [(j,dj)]
+                else:
+                    i = j
+                    di = dj - 1
+                    try:
+                        worthy[0][(i,di)].append((j,dj))
+                    except KeyError:
+                        worthy[0][(i,di)] = [(j,dj)]
         
         for t,u_t in enumerate(U):
-            #print "u_t: %s"%u_t
-            worthy[t] = {}
-            for i in self.states:
-                for di in range(1,r[i]+1):
-                    for j in self.states:
-                        for dj in range(1,r[j]+1):
-                            # the restriction below enforces consistency between pairs:
-                            # we only consider those transitions that are possible from 
-                            # t-1 
-                            if t > 0: 
-                                if (j,dj) in worthy[t-1]: 
-                                    # so for every possible state duration pair, we 
-                                    # calculate the probability `l` of transition from the
-                                    # previous state (j,dj) to the current state (i,di).
-                                    if dj == 1:
-                                        l = np.exp(A_l[j,i] + D_l[i,di])
-                                        #print l
-                                        #print l > u_t
-                                    else:
-                                        if i==j and dj != 1 and di==dj-1:
-                                            l = 1
-                                        else:
-                                            l = 0
-                                    # if the probaility `l` is greater than u_t then we 
-                                    # add that pair to our dictionary of worthy. The 
-                                    # dictionary's keys index the alphas we will
-                                    # calculate at time t, and the values of the 
-                                    # dictionary are the indices into alpha at time t-1
-                                    # that we need to sum over.
-                                    #print l > u_t, l, u_t
-                                    if l > u_t:
-                                        try:
-                                            worthy[t][(i,di)].append((j,dj))
-                                        except KeyError:
-                                            worthy[t][(i,di)] = [(j,dj)]
-                            else:
-                                if dj == 1:
-                                    l = np.exp(A_l[j,i] + D_l[i,di])
-                                    #print "l at the transition: %s"%l 
-                                else:
-                                    if i==j and dj != 1 and di==dj-1:
-                                        l = 1
-                                    else:
-                                        l = -1000
-                                # if the probaility `l` is greater than u_t then we 
-                                # add that pair to our dictionary of worthy. The 
-                                # dictionary's keys index the alphas we will
-                                # calculate at time t, and the values of the 
-                                # dictionary are the indices into alpha at time t-1
-                                # that we need to sum over.
-                                if l > u_t:
+            if t > 0: 
+                worthy[t] = {}
+                # we only consider those transitions that are possible from 
+                # t-1
+                for j,dj in worthy[t-1]:                    
+                    # if a transition occured...
+                    if dj == 1:
+                        # which transitions are worthy?
+                        for i in self.states:
+                            for di in range(1, right[i]+1):
+                                # if the probability is worthy..
+                                if l[(i,j,di)] > u_t:
+                                    # add it to the list!
                                     try:
                                         worthy[t][(i,di)].append((j,dj))
                                     except KeyError:
+                                        # (or start a new list)
                                         worthy[t][(i,di)] = [(j,dj)]
-            
+                    # if a transition didn't occur, then we only add the 
+                    # decrement i==j, di = dj-1
+                    else:
+                        i = j
+                        di = dj - 1
+                        try:
+                            worthy[t][(i,di)].append((j,dj))
+                        except KeyError:
+                            worthy[t][(i,di)] = [(j,dj)]
+                
             try:                            
                 assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
             except AssertionError:
@@ -206,8 +192,8 @@ class EDHMM:
                 print "u_%s: %s"%(t,u_t)
                 for i in self.states:
                     for j in self.states:
-                        for di in range(1,r[j]+1):
-                            print A_l[j,i] + D_l[i,di]
+                        for di in range(1,right[j]+1):
+                            print np.exp(A_l[j,i] + D_l[i,di])
                 raise
                 
                 
@@ -229,8 +215,15 @@ class EDHMM:
                 # TODO this should be restricted
                 for i in self.states:
                     alphahat[t][i] = {}
-                    for d in range(1,r[i]+10):
-                        alphahat[t][i][d] = self.pi.likelihood((i,d))
+                    
+                    for d in [1]+range(l[i],r[i]+10):
+                        try:
+                            alphahat[t][i][d] = self.pi.likelihood((i,d))
+                        except AssertionError:
+                            print d
+                            print l[i]
+                            print [1]+range(l[i],r[i]+10)
+                            raise
             else:
                 for i,J in worthy.items():
                     # initialise alpahat[t] if necessary
@@ -258,7 +251,7 @@ class EDHMM:
                             # if a KeyError occurred, then we already decided
                             # that alphahat[t-1][state][duration] was zero, so
                             # we can just ignore it
-                            print "skipping over a key error"
+                            #print "skipping over a key error"
                             pass
                     
                     assert not np.isinf(alphahat[t][i[0]][i[1]]), alphahat[t-1][j[0]][j[1]]
@@ -301,12 +294,10 @@ class EDHMM:
         for t in reversed(xrange(T-1)):
             # pick the subset of alphahats
             # here w[t+1][Z[-1]] is a list of the possible zs you can sample
-            # from in alphahat[t] given that the next state is Z[-1]
-            a = {}            
-            
+            # from in alphahat[t] given that the next state is Z[-1], i.e.
+            # w[t+1][Z[t+1]] is the next state
+            a = dict([(i,{}) for i in self.states])        
             for j in W[t+1][Z[-1]]:
-                
-                a[j[0]] = {}
                 try:
                     a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
                 except KeyError:
@@ -317,7 +308,7 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self,Y, maxits=100):
+    def beam(self,Y, its=100, burnin=50):
         
         bored = False
         
@@ -360,16 +351,17 @@ class EDHMM:
             self.O.update(Z_sample, Y)
             self.A.update(Z_sample)
             # 
-            As.append(self.A.A)
-            O_means.append(self.O.mu)
-            log.debug("O means: %s"%O_means[-1])
-            O_precisions.append(self.O.tau)
-            log.debug("O precisions: %s"%O_precisions[-1])
-            D_mus.append(self.D.mu)
-            log.debug("D rates: %s"%D_mus[-1])
-            Zs = [Z_sample]
+            if count > burnin:
+                As.append(self.A.A)
+                O_means.append(self.O.mu)
+                log.debug("O means: %s"%O_means[-1])
+                O_precisions.append(self.O.tau)
+                log.debug("O precisions: %s"%O_precisions[-1])
+                D_mus.append(self.D.mu)
+                log.debug("D rates: %s"%D_mus[-1])
+                Zs.append(Z_sample)
             # stop
-            if count > maxits:
+            if count > its:
                 bored = True
             count += 1
         
@@ -377,6 +369,7 @@ class EDHMM:
         O_means = np.array(O_means).squeeze()
         O_precisions = np.array(O_precisions).squeeze()
         D_mus = np.array(D_mus).squeeze()
+        Zs = np.array(Zs).squeeze()
             
         return As, O_means, O_precisions, D_mus, Zs
         
