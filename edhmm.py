@@ -30,13 +30,15 @@ class Categorical:
         assert p.sum()
         self.p = p/p.sum()
         assert self.p.sum().round(5) == 1, (p, self.p,  self.p.sum())
+        self.p = np.squeeze(self.p)
+        #print self.p
     
     def sample(self):
         try:
             x = np.random.multinomial(1,self.p)
         except ValueError:
-            print self.p
-            print self.p.sum()
+            #print self.p
+            #print self.p.sum()
             raise
         return np.where(x==1)[0][0]
 
@@ -217,13 +219,8 @@ class EDHMM:
                     alphahat[t][i] = {}
                     
                     for d in [1]+range(l[i],r[i]+10):
-                        try:
-                            alphahat[t][i][d] = self.pi.likelihood((i,d))
-                        except AssertionError:
-                            print d
-                            print l[i]
-                            print [1]+range(l[i],r[i]+10)
-                            raise
+                        alphahat[t][i][d] = self.pi.likelihood((i,d))
+            
             else:
                 for i,J in worthy.items():
                     # initialise alpahat[t] if necessary
@@ -276,10 +273,16 @@ class EDHMM:
                 print "nuts!"
                 print [np.exp(a[i].values() - m).sum() for i in a.keys()]
                 raise
+            
             x = a.keys()[xi]
-            di = Categorical(
-                np.exp(np.array(a[x].values()) - max(a[x].values()))
-            ).sample()
+            
+            try:
+                di = Categorical(
+                    np.exp(np.array(a[x].values()) - max(a[x].values()))
+                ).sample()
+            except TypeError:
+                print "only one valid d?"
+                di=0
             d = a[x].keys()[di]
             return x,d
         
@@ -302,7 +305,7 @@ class EDHMM:
                     a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
                 except KeyError:
                     a[j[0]][j[1]] = 0
-                z = sample_z(a)
+            z = sample_z(a)
             
             Z.append(z)
         Z.reverse()

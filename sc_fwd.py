@@ -45,7 +45,6 @@ alpha = m.beam_forward(Y, U=U, W=W)
 Z_sample = m.beam_backward_sample(alpha,W)
 X_sample = [z[0] for z in Z_sample]
 
-
 pb.plot(X)
 pb.plot(X_sample)
 pb.ylim((-0.1,2.1))
