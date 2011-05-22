@@ -40,17 +40,21 @@ class Gaussian:
         
     def likelihood(self, state, obs):
         assert state in self.states, (state, self.states)
-        x = (obs - self.mu[state])
-        try:
-            k = len(x)
-        except TypeError:
-            k = 1
-        y = float(
-            - (0.5 * k *log_2_pi) 
-            - (0.5 * self.log_det_inv_tau[state]) 
-            - (0.5 * np.inner(np.inner(x,self.tau[state]),x))
-        )
-        return y
+        #x = (obs - self.mu[state])
+        #try:
+        #    k = len(x)
+        #except TypeError:
+        #    k = 1
+        #y = float(
+        #    - (0.5 * k *log_2_pi) 
+        #    - (0.5 * self.log_det_inv_tau[state]) 
+        #    - (0.5 * np.inner(np.inner(x,self.tau[state]),x))
+        #)
+        z = pymc.mv_normal_like(obs, self.mu[state], self.tau[state])
+        #print y
+        #print z
+        #print "\n"
+        return z
     
     def sample_obs(self,state):
         assert state in self.states, (state, self.states)
