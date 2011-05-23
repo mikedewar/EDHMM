@@ -5,11 +5,12 @@ import logging
 log = logging.getLogger('duration') 
 
 class Poisson:
-    def __init__(self, mu, alpha, beta):
+    def __init__(self, mu, alpha, beta, support_step=1):
         self.alpha = alpha
         self.beta = beta
         self.mu = mu
         self.states = range(len(mu))
+        self.support_step = support_step
     
     def likelihood(self,state,k):
         assert state in self.states
@@ -49,6 +50,7 @@ class Poisson:
         self.mu = self.sample_mu(Z)
     
     def support(self, state, threshold=0.001):
+        log.info('finding support')
         # walk left
         d, dl = int(self.mu[state]), 1
         lold = self.likelihood(state,d)
@@ -56,13 +58,13 @@ class Poisson:
             lnew = np.exp(self.likelihood(state,d))
             dl = abs(lnew-lold)
             lold = lnew
-            d -= 1
+            d -= self.support_step
         left = max(1,d)
         # walk right
         d, dl = int(self.mu[state]), 1
         lold = self.likelihood(state,d)
         while dl > threshold:
-            d += 1
+            d += self.support_step
             lnew = np.exp(self.likelihood(state,d))
             dl = abs(lnew-lold)
             lold = lnew
