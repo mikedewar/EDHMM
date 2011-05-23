@@ -37,7 +37,7 @@ D = Poisson(
 pi = Initial(K=3,beta=0.001)
 m = EDHMM(A,O,D,pi)
 
-T = 500
+T = 100
 
 X,Y,Dseq = m.sim(T)
 
@@ -47,7 +47,7 @@ np.save("Y.npy", Y)
 np.save("Z.npy", zip(X,Dseq))
 
 if True:
-    As, O_means, O_precisions, D_mus, Zs, L = m.beam(Y, its=300, burnin=100)
+    As, O_means, O_precisions, D_mus, Zs, L = m.beam(Y, its=300, burnin=100, name ="test")
     np.save("As",As)
     np.save("O_m", O_means)
     np.save("O_p", O_precisions)

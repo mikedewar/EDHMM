@@ -149,12 +149,14 @@ class EDHMM:
         left,right = zip(*[self.D.support(i) for i in self.states])
         worthy = [None for u in U]
         
+        log.debug('calculating likelihoods')
         l = {}
         for i in self.states:
             for j in self.states:
                 for di in range(1,max(right)+1):
                     l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
         
+        log.debug('finding worthy durations for initial condition')
         worthy[0] = {}
         for j in self.states:
             for dj in range(left[j],right[j]+1):
@@ -174,6 +176,7 @@ class EDHMM:
                     except KeyError:
                         worthy[0][(i,di)] = [(j,dj)]
         
+        log.debug('finding worthy durations over time')
         for t,u_t in enumerate(U):
             if t > 0: 
                 worthy[t] = {}
@@ -382,7 +385,6 @@ class EDHMM:
                     np.save("%s_Zs"%name, Zs)
                     np.save("%s_L"%name, L)
 
-                
             # stop
             if count > its:
                 bored = True
