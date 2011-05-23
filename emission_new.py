@@ -10,11 +10,6 @@ invwishart = lambda nu, L: pymc.InverseWishart("invwishart", nu, L).random()
 mvnormal = lambda mu, tau: pymc.MvNormal('mvnormal', mu, tau).random()
 #invwishart_like = lambda x, nu, L: pymc.inverse_wishart_like(x,nu,L)
 
-
-
-
-
-
 class Gaussian:
     
     def __init__(self, nu, Lambda, mu_0, kappa, mu, tau):
@@ -130,7 +125,7 @@ if __name__ == "__main__":
     Z = np.load('Z.npy')
     Y = np.load('Y.npy')
     O = Gaussian(
-        nu = 1, 
+        nu = 2, 
         Lambda = np.array([1]), 
         mu_0 = [-5, 0, 5], 
         kappa = 1, 

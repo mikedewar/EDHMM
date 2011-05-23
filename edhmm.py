@@ -114,6 +114,24 @@ class EDHMM:
             D.append(d)
         return X, Y, D
     
+    def loglikelihood(self,Z,Y):
+        l = 0
+        for t in range(1,len(Z)):
+            i  = Z[t-1][0]
+            j  = Z[t][0]
+            di = Z[t-1][1]
+            y = Y[t]
+            
+            if i==j:
+                l += self.O.likelihood(j,y)
+            else:    
+                l += (
+                    self.A.likelihood(i,j) + 
+                    self.D.likelihood(i,di) + 
+                    self.O.likelihood(j,y)
+                )
+        return l
+    
     def slice_sample(self,Z):
         log.info('forming slice')
         u = [np.log(0.0000001)]
@@ -121,7 +139,7 @@ class EDHMM:
             i  = Z[t-1][0]
             j  = Z[t][0]
             di = Z[t-1][1]
-            l = self.A.likelihood(j,i) + self.D.likelihood(i,di)
+            l = self.A.likelihood(i,j) + self.D.likelihood(i,di)
             u.append(np.random.uniform(low=0, high=np.exp(l)))
         return np.array(u)
     
@@ -134,7 +152,7 @@ class EDHMM:
         l = {}
         for i in self.states:
             for j in self.states:
-                for di in range(min(left),max(right)+1):
+                for di in range(1,max(right)+1):
                     l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
         
         worthy[0] = {}
@@ -264,36 +282,21 @@ class EDHMM:
         log.info('sampling state sequence')
         
         def sample_z(a):
-            try:
-                #print [a[i].values() for i in a.keys()]
-                m = max(max([a[i].values() for i in a.keys()]))
-                p = [np.exp(np.array(a[i].values()) - m).sum() for i in a.keys()]
-                xi = Categorical(np.array(p)).sample()
-            except:
-                print "nuts!"
-                print [np.exp(a[i].values() - m).sum() for i in a.keys()]
-                raise
-            
-            x = a.keys()[xi]
-            
+            m = max(max([a[i].values() for i in a.keys()]))
+            p = [np.exp(np.array(a[i].values()) - m).sum() for i in a.keys()]
+            xi = Categorical(np.array(p)).sample()
+            x = a.keys()[xi] 
             try:
                 di = Categorical(
                     np.exp(np.array(a[x].values()) - max(a[x].values()))
                 ).sample()
             except TypeError:
-                print "only one valid d?"
                 di=0
             d = a[x].keys()[di]
             return x,d
         
         T = len(alphahat)
-        try:
-            Z = [sample_z(alphahat[-1])]
-        except IndexError:
-            #pp.pprint(alphahat)
-            #print len(alphahat)
-            raise
-        
+        Z = [sample_z(alphahat[-1])]
         for t in reversed(xrange(T-1)):
             # pick the subset of alphahats
             # here w[t+1][Z[-1]] is a list of the possible zs you can sample
@@ -313,8 +316,12 @@ class EDHMM:
                 
     def beam(self,Y, its=100, burnin=50):
         
-        bored = False
+        print self.D.mu
+        print self.O.mu
+        print self.A.A
         
+        
+        bored = False
         # sample auxillary variables from some small value
         U = [np.random.uniform(0,np.log(0.0000001)) for y in Y]
         # get worthy samples given the relaxed U 
@@ -326,6 +333,13 @@ class EDHMM:
         self.D.update(Z_sample)
         self.O.update(Z_sample, Y)
         self.A.update(Z_sample)
+        
+        # report initial params
+        print self.D.mu
+        print self.O.mu
+        print self.A.A
+        
+        
         # count how many iterations we've done so far
         count = 0
         # storage for reporting
@@ -334,6 +348,7 @@ class EDHMM:
         O_precisions = []
         D_mus = []
         Zs = []
+        L = []
         # block gibbs
         while not bored:
             log.info('running sample %s'%count)
@@ -341,19 +356,22 @@ class EDHMM:
             start = time.time()
             U = self.slice_sample(Z_sample)
             W = self.worthy_transitions(U)
-            log.info('slice sample took %ss'%(time.time() - start))
+            log.debug('slice sample took %ss'%(time.time() - start))
             # states
             start = time.time()
             alpha = self.beam_forward(Y, W=W)
-            log.info('forward pass took %ss'%(time.time() - start))
+            log.debug('forward pass took %ss'%(time.time() - start))
             start = time.time()
             Z_sample = self.beam_backward_sample(alpha,W)
-            log.info('backward sample took %ss'%(time.time() - start))
+            log.debug('backward sample took %ss'%(time.time() - start))
             # parameters
             self.D.update(Z_sample)
             self.O.update(Z_sample, Y)
             self.A.update(Z_sample)
-            # 
+            # loglikelihood
+            l = self.loglikelihood(Z_sample,Y)
+            L.append(l)
+            log.info("log likelihood at iteration %s: %s"%(count,l))
             if count > burnin:
                 As.append(self.A.A)
                 O_means.append(self.O.mu)
@@ -373,8 +391,9 @@ class EDHMM:
         O_precisions = np.array(O_precisions).squeeze()
         D_mus = np.array(D_mus).squeeze()
         Zs = np.array(Zs).squeeze()
+        L = np.array(L).squeeze()
             
-        return As, O_means, O_precisions, D_mus, Zs
+        return As, O_means, O_precisions, D_mus, Zs, L
         
 if __name__ == "__main__":
     

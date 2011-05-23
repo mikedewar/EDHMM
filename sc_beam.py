@@ -14,7 +14,7 @@ logging.basicConfig(
      stream=sys.stdout,
     #filename="EDHMM.log", 
     #filemode="w",
-    level=logging.DEBUG
+    level=logging.INFO
 )
 
 A = Transition(
@@ -22,18 +22,22 @@ A = Transition(
     A=pb.array([[0, 0.3, 0.7], [0.6, 0, 0.4], [0.3, 0.7, 0]])
 )
 O = Gaussian(
-    nu = 1, 
+    nu = 1,
     Lambda = np.array([1]), 
     mu_0 = [-10, 0, 10], 
     kappa = 1, 
     mu = [-10, 0, 10], 
     tau = [np.array([[3]]),np.array([[3]]),np.array([[3]])]
 )
-D = Poisson(mu = [3,5,10], alpha=[3,3,3], beta=[0.8,0.5,0.25])
+D = Poisson(
+    mu = [5,10,15], 
+    alpha=[50, 100, 150], 
+    beta=[10, 10, 10]
+)
 pi = Initial(K=3,beta=0.001)
 m = EDHMM(A,O,D,pi)
 
-T = 1000
+T = 500
 
 X,Y,Dseq = m.sim(T)
 
@@ -43,10 +47,18 @@ np.save("Y.npy", Y)
 np.save("Z.npy", zip(X,Dseq))
 
 if True:
-    As, O_means, O_precisions, D_mus, Zs = m.beam(Y, maxits = 1000)
-
+    As, O_means, O_precisions, D_mus, Zs, L = m.beam(Y, its=300, burnin=100)
     np.save("As",As)
     np.save("O_m", O_means)
     np.save("O_p", O_precisions)
     np.save("D_mus", D_mus)
     np.save("Zs", Zs)
+    np.save("L", L)
+
+
+pb.figure()
+pb.plot(L)
+pb.figure()
+for i in range(3):
+    pb.hist(D_mus[:,i], alpha=0.5)
+pb.show()

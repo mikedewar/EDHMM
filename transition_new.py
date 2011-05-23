@@ -10,14 +10,15 @@ class Transition:
             self.alpha[i][i] = 0
         self.K = K
         self.states = range(K)
-        A = A + 0.0001
-        for i in self.states:
-            A[i] = A[i]/A[i].sum()
+        #A = A + 0.0001
+        #for i in self.states:
+        #    A[i] = A[i]/A[i].sum()
         self.A = A
     
     def likelihood(self,i,j):
         assert i in self.states
         assert j in self.states
+        #assert i != j
         return np.log(self.A[i,j])
     
     def sample_x(self, i):
@@ -44,9 +45,9 @@ class Transition:
         for i in self.states:
             A[i] = np.random.dirichlet(self.alpha[i] + n[i].values())
         
-        A = A + 0.0001
-        for i in self.states:
-            A[i] /= A[i].sum()
+        #A = A + 0.0001
+        #for i in self.states:
+        #    A[i] /= A[i].sum()
         
         return A      
     

@@ -9,6 +9,7 @@ import pylab as pb
 import numpy as np
 import logging
 import sys
+import time
 
 logging.basicConfig(
      stream=sys.stdout,
@@ -40,7 +41,9 @@ X,Y,Dseq = m.sim(T)
 U = [np.random.uniform(0,0.00001) for y in Y]
 W = m.worthy_transitions(U)
 
+t = time.time()
 alpha = m.beam_forward(Y, U=U, W=W)
+print time.time() - t
 
 Z_sample = m.beam_backward_sample(alpha,W)
 X_sample = [z[0] for z in Z_sample]
