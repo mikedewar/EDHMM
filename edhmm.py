@@ -314,12 +314,7 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self,Y, its=100, burnin=50):
-        
-        print self.D.mu
-        print self.O.mu
-        print self.A.A
-        
+    def beam(self,Y, its=100, burnin=50, name=None):
         
         bored = False
         # sample auxillary variables from some small value
@@ -334,12 +329,6 @@ class EDHMM:
         self.O.update(Z_sample, Y)
         self.A.update(Z_sample)
         
-        # report initial params
-        print self.D.mu
-        print self.O.mu
-        print self.A.A
-        
-        
         # count how many iterations we've done so far
         count = 0
         # storage for reporting
@@ -349,6 +338,7 @@ class EDHMM:
         D_mus = []
         Zs = []
         L = []
+        
         # block gibbs
         while not bored:
             log.info('running sample %s'%count)
@@ -381,6 +371,18 @@ class EDHMM:
                 D_mus.append(self.D.mu)
                 log.debug("D rates: %s"%D_mus[-1])
                 Zs.append(Z_sample)
+                
+                if name:
+                    # continually overwrite so we can quit at any time
+                    # this will slow things down a LOT
+                    np.save("%s_As"%name,As)
+                    np.save("%s_O_m"%name, O_means)
+                    np.save("%s_O_p"%name, O_precisions)
+                    np.save("%s_D_mus"%name, D_mus)
+                    np.save("%s_Zs"%name, Zs)
+                    np.save("%s_L"%name, L)
+
+                
             # stop
             if count > its:
                 bored = True
