@@ -266,6 +266,8 @@ class EDHMM:
         log.debug('starting iteration')
         for t,y in enumerate(Y):
             
+            log.debug('getting worthy for t: %s'%t)
+            
             if W is None:
                 if t == 0:
                     worthy = self.get_initial_worthy(U[t])
@@ -274,6 +276,8 @@ class EDHMM:
             else:
                 worthy = W[t]
                 
+            
+            log.debug('calculating alpha[t]: %s'%t)
             
             if t == 0:
                 # TODO this should be restricted
