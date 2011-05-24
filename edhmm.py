@@ -74,6 +74,9 @@ class EDHMM:
         self.pi = pi
         self.K = len(pi)
         self.states = range(self.K)
+       
+        
+        
     
     @types(T=int)
     def gen(self,T):
@@ -143,7 +146,7 @@ class EDHMM:
             u.append(np.random.uniform(low=0, high=np.exp(l)))
         return np.array(u)
         
-    def get_worthy(self,u,l,old_worthy,left,right):
+    def get_worthy(self,u,old_worthy):
         worthy = {}
         # we only consider those transitions that are possible from 
         # t-1
@@ -152,9 +155,9 @@ class EDHMM:
             if dj == 1:
                 # which transitions are worthy?
                 for i in self.states:
-                    for di in range(1, right[i]+1):
+                    for di in range(1, self.right[i]+1):
                         # if the probability is worthy..
-                        if l[(i,j,di)] > u:
+                        if self.l[(i,j,di)] > u:
                             # add it to the list!
                             try:
                                 worthy[(i,di)].append((j,dj))
@@ -172,14 +175,14 @@ class EDHMM:
                     worthy[(i,di)] = [(j,dj)]
         return worthy
     
-    def get_initial_worthy(self,u,l,left,right):
+    def get_initial_worthy(self,u):
         worthy = {}
         for j in self.states:
-            for dj in range(left[j],right[j]+1):
+            for dj in range(self.left[j],self.right[j]+1):
                 if dj == 1:
                     for i in self.states:
-                        for di in range(left[i],right[i]+1):
-                            if l[(i,j,di)] > u:
+                        for di in range(self.left[i],self.right[i]+1):
+                            if self.l[(i,j,di)] > u:
                                 try:
                                     worthy[(i,di)].append((j,dj))
                                 except KeyError:
@@ -196,24 +199,16 @@ class EDHMM:
     def worthy_transitions(self, U):
         log.info('calculating transitions worthy of u')
         # find those z_t and z_t-1 that are worthy, given u
-        left,right = zip(*[self.D.support(i) for i in self.states])
         worthy = [None for u in U]
-        
-        log.debug('calculating likelihoods')
-        l = {}
-        for i in self.states:
-            for j in self.states:
-                for di in range(1,max(right)+1):
-                    l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
         
         log.debug('finding worthy durations for initial condition')
         worthy[0] = {}
         for j in self.states:
-            for dj in range(left[j],right[j]+1):
+            for dj in range(self.left[j],self.right[j]+1):
                 if dj == 1:
                     for i in self.states:
-                        for di in range(left[i],right[i]+1):
-                            if l[(i,j,di)] > U[0]:
+                        for di in range(self.left[i],self.right[i]+1):
+                            if self.l[(i,j,di)] > U[0]:
                                 try:
                                     worthy[0][(i,di)].append((j,dj))
                                 except KeyError:
@@ -237,9 +232,9 @@ class EDHMM:
                     if dj == 1:
                         # which transitions are worthy?
                         for i in self.states:
-                            for di in range(1, right[i]+1):
+                            for di in range(1, self.right[i]+1):
                                 # if the probability is worthy..
-                                if l[(i,j,di)] > u_t:
+                                if self.l[(i,j,di)] > u_t:
                                     # add it to the list!
                                     try:
                                         worthy[t][(i,di)].append((j,dj))
@@ -256,19 +251,7 @@ class EDHMM:
                         except KeyError:
                             worthy[t][(i,di)] = [(j,dj)]
                 
-            try:                            
-                assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
-            except AssertionError:
-                print "worthy[%s]: %s"%(t,worthy[t])
-                print "worthy[%s]: %s"%(t-1,worthy[t-1])
-                print "worthy[%s]: %s"%(t-2,worthy[t-2])
-                print "u_%s: %s"%(t,u_t)
-                for i in self.states:
-                    for j in self.states:
-                        for di in range(1,right[j]+1):
-                            print np.exp(A_l[j,i] + D_l[i,di])
-                raise
-                
+            assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
                 
         return worthy
             
@@ -278,25 +261,16 @@ class EDHMM:
         
         # initialise alphahat
         log.debug('getting support')
-        alphahat = [{} for y in Y]
-        left,right = zip(*[self.D.support(i) for i in self.states])
-        
-        if W is None:
-            log.debug('calculating likelihoods')
-            l = {}
-            for i in self.states:
-                for j in self.states:
-                    for di in range(1,max(right)+1):
-                        l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
+        alphahat = [{} for y in Y]            
         
         log.debug('starting iteration')
         for t,y in enumerate(Y):
             
             if W is None:
                 if t == 0:
-                    worthy = self.get_initial_worthy(U[t],l,left,right)
+                    worthy = self.get_initial_worthy(U[t])
                 else:
-                    worthy = self.get_worthy(U[t],l,worthy,left,right)
+                    worthy = self.get_worthy(U[t],worthy)
             else:
                 worthy = W[t]
                 
@@ -305,7 +279,7 @@ class EDHMM:
                 # TODO this should be restricted
                 for i in self.states:
                     alphahat[t][i] = {}
-                    for d in [1]+range(left[i],right[i]+10):
+                    for d in [1]+range(self.left[i],self.right[i]+10):
                         alphahat[t][i][d] = self.pi.likelihood((i,d))
             
             else:
@@ -346,7 +320,7 @@ class EDHMM:
                 
         return alphahat
     
-    def beam_backward_sample(self, alphahat, W):
+    def beam_backward_sample(self, alphahat, U=None, W=None):
         
         log.info('sampling state sequence')
         
@@ -371,28 +345,45 @@ class EDHMM:
             # here w[t+1][Z[-1]] is a list of the possible zs you can sample
             # from in alphahat[t] given that the next state is Z[-1], i.e.
             # w[t+1][Z[t+1]] is the next state
-            a = dict([(i,{}) for i in self.states])        
-            for j in W[t+1][Z[-1]]:
-                try:
-                    a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
-                except KeyError:
-                    a[j[0]][j[1]] = 0
-            z = sample_z(a)
+            
+            
+            #a = dict([(i,{}) for i in self.states])        
+            #for j in worthy[Z[-1]]:
+            #    try:
+            #        a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
+            #    except KeyError:
+            #        a[j[0]][j[1]] = 0
+            z = sample_z(alphahat[t])
             
             Z.append(z)
         Z.reverse()
         return Z
                 
-    def beam(self,Y, its=100, burnin=50, name=None):
+    def beam(self,Y, its=100, burnin=50, name=None,online=False):
         
         bored = False
+        
+        self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+        
+        log.debug('calculating likelihoods')
+        self.l = {}
+        for i in self.states:
+            for j in self.states:
+                for di in range(1,max(self.right)+1):
+                    self.l[(i,j,di)] = np.exp(
+                        self.A.likelihood(j,i) + self.D.likelihood(i,di)
+                    )
         # sample auxillary variables from some small value
         U = [np.random.uniform(0,np.log(0.0000001)) for y in Y]
         # get worthy samples given the relaxed U 
-        W = self.worthy_transitions(U)
-        # get an initial state sequence
-        alpha = self.beam_forward(Y, W=W)
-        Z_sample = self.beam_backward_sample(alpha,W)
+        if online:
+            alpha = self.beam_forward(Y,U)
+            Z_sample = self.beam_backward_sample(alpha,U)
+        else:
+            W = self.worthy_transitions(U)
+            # get an initial state sequence
+            alpha = self.beam_forward(Y, U, W=W)
+            Z_sample = self.beam_backward_sample(alpha,U,W)
         # do the initial update
         self.D.update(Z_sample)
         self.O.update(Z_sample, Y)
@@ -410,6 +401,16 @@ class EDHMM:
         
         # block gibbs
         while not bored:
+            log.debug('getting support')
+            self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+            log.debug('calculating likelihoods')
+            self.l = {}
+            for i in self.states:
+                for j in self.states:
+                    for di in range(1,max(self.right)+1):
+                        self.l[(i,j,di)] = np.exp(
+                            self.A.likelihood(j,i) + self.D.likelihood(i,di)
+                        )
             log.info('running sample %s'%count)
             # slice
             start = time.time()
@@ -418,11 +419,16 @@ class EDHMM:
             log.debug('slice sample took %ss'%(time.time() - start))
             # states
             start = time.time()
-            alpha = self.beam_forward(Y, W=W)
-            log.debug('forward pass took %ss'%(time.time() - start))
-            start = time.time()
-            Z_sample = self.beam_backward_sample(alpha,W)
-            log.debug('backward sample took %ss'%(time.time() - start))
+            if online:
+                alpha = self.beam_forward(Y,U)
+                Z_sample = self.beam_backward_sample(alpha,U)
+                log.debug('inference took %ss'%(time.time() - start))
+            else:
+                alpha = self.beam_forward(Y, U, W=W)
+                log.debug('forward pass took %ss'%(time.time() - start))
+                start = time.time()
+                Z_sample = self.beam_backward_sample(alpha,U,W)
+                log.debug('backward sample took %ss'%(time.time() - start))
             # parameters
             self.D.update(Z_sample)
             self.O.update(Z_sample, Y)
