@@ -142,6 +142,56 @@ class EDHMM:
             l = self.A.likelihood(i,j) + self.D.likelihood(i,di)
             u.append(np.random.uniform(low=0, high=np.exp(l)))
         return np.array(u)
+        
+    def get_worthy(self,u,l,old_worthy,left,right):
+        worthy = {}
+        # we only consider those transitions that are possible from 
+        # t-1
+        for j,dj in old_worthy:                    
+            # if a transition occured...
+            if dj == 1:
+                # which transitions are worthy?
+                for i in self.states:
+                    for di in range(1, right[i]+1):
+                        # if the probability is worthy..
+                        if l[(i,j,di)] > u:
+                            # add it to the list!
+                            try:
+                                worthy[(i,di)].append((j,dj))
+                            except KeyError:
+                                # (or start a new list)
+                                worthy[(i,di)] = [(j,dj)]
+            # if a transition didn't occur, then we only add the 
+            # decrement i==j, di = dj-1
+            else:
+                i = j
+                di = dj - 1
+                try:
+                    worthy[(i,di)].append((j,dj))
+                except KeyError:
+                    worthy[(i,di)] = [(j,dj)]
+        return worthy
+    
+    def get_initial_worthy(self,u,l,left,right):
+        worthy = {}
+        for j in self.states:
+            for dj in range(left[j],right[j]+1):
+                if dj == 1:
+                    for i in self.states:
+                        for di in range(left[i],right[i]+1):
+                            if l[(i,j,di)] > u:
+                                try:
+                                    worthy[(i,di)].append((j,dj))
+                                except KeyError:
+                                    worthy[(i,di)] = [(j,dj)]
+                else:
+                    i = j
+                    di = dj - 1
+                    try:
+                        worthy[(i,di)].append((j,dj))
+                    except KeyError:
+                        worthy[(i,di)] = [(j,dj)]
+        return worthy
     
     def worthy_transitions(self, U):
         log.info('calculating transitions worthy of u')
@@ -222,24 +272,40 @@ class EDHMM:
                 
         return worthy
             
-    def beam_forward(self, Y, U=None, W=None):        
+    def beam_forward(self, Y, U, W=None):        
         
         log.info('running forward algorithm')
         
         # initialise alphahat
+        log.debug('getting support')
         alphahat = [{} for y in Y]
-        l,r = zip(*[self.D.support(i) for i in self.states])
-                
+        left,right = zip(*[self.D.support(i) for i in self.states])
+        
         if W is None:
-            W = self.worthy_transitions(U)
-             
-        for t,(y,worthy) in enumerate(zip(Y,W)):
+            log.debug('calculating likelihoods')
+            l = {}
+            for i in self.states:
+                for j in self.states:
+                    for di in range(1,max(right)+1):
+                        l[(i,j,di)] = np.exp(self.A.likelihood(j,i) + self.D.likelihood(i,di))
+        
+        log.debug('starting iteration')
+        for t,y in enumerate(Y):
+            
+            if W is None:
+                if t == 0:
+                    worthy = self.get_initial_worthy(U[t],l,left,right)
+                else:
+                    worthy = self.get_worthy(U[t],l,worthy,left,right)
+            else:
+                worthy = W[t]
+                
+            
             if t == 0:
                 # TODO this should be restricted
                 for i in self.states:
                     alphahat[t][i] = {}
-                    
-                    for d in [1]+range(l[i],r[i]+10):
+                    for d in [1]+range(left[i],right[i]+10):
                         alphahat[t][i][d] = self.pi.likelihood((i,d))
             
             else:
