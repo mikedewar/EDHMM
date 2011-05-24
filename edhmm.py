@@ -263,6 +263,7 @@ class EDHMM:
         log.debug('getting support')
         alphahat = [{} for y in Y]            
         
+        log.debug('calculating observation likelihoods')
         ol = np.zeros((self.K,len(Y)))
         for i in self.states:
             for t,y in enumerate(Y):
@@ -271,7 +272,7 @@ class EDHMM:
         log.debug('starting iteration')
         for t,y in enumerate(Y):
             
-            #log.debug('getting worthy for t: %s'%t)
+            log.debug('getting worthy for t: %s'%t)
             
             if W is None:
                 if t == 0:
@@ -282,7 +283,7 @@ class EDHMM:
                 worthy = W[t]
                 
             
-            #log.debug('calculating alpha[t]: %s'%t)
+            log.debug('calculating alpha[t]: %s'%t)
             
             if t == 0:
                 # TODO this should be restricted
@@ -453,14 +454,16 @@ class EDHMM:
                 Zs.append(Z_sample)
                 
                 if name:
-                    # continually overwrite so we can quit at any time
-                    # this will slow things down a LOT
-                    np.save("%s_As"%name,As)
-                    np.save("%s_O_m"%name, O_means)
-                    np.save("%s_O_p"%name, O_precisions)
-                    np.save("%s_D_mus"%name, D_mus)
-                    np.save("%s_Zs"%name, Zs)
-                    np.save("%s_L"%name, L)
+                    if not count % 20:
+                        log.debug('writing samples to disk')
+                        # continually overwrite so we can quit at any time
+                        # this will slow things down a LOT
+                        np.save("%s_As"%name,As)
+                        np.save("%s_O_m"%name, O_means)
+                        np.save("%s_O_p"%name, O_precisions)
+                        np.save("%s_D_mus"%name, D_mus)
+                        np.save("%s_Zs"%name, Zs)
+                        np.save("%s_L"%name, L)
 
             # stop
             if count > its:
