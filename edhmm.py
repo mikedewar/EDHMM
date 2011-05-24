@@ -263,10 +263,15 @@ class EDHMM:
         log.debug('getting support')
         alphahat = [{} for y in Y]            
         
+        ol = np.zeros((self.K,len(Y)))
+        for i in self.states:
+            for t,y in enumerate(Y):
+                ol[i,t] = self.O.likelihood(i,y)
+        
         log.debug('starting iteration')
         for t,y in enumerate(Y):
             
-            log.debug('getting worthy for t: %s'%t)
+            #log.debug('getting worthy for t: %s'%t)
             
             if W is None:
                 if t == 0:
@@ -277,7 +282,7 @@ class EDHMM:
                 worthy = W[t]
                 
             
-            log.debug('calculating alpha[t]: %s'%t)
+            #log.debug('calculating alpha[t]: %s'%t)
             
             if t == 0:
                 # TODO this should be restricted
@@ -316,11 +321,7 @@ class EDHMM:
                             #print "skipping over a key error"
                             pass
                     
-                    assert not np.isinf(alphahat[t][i[0]][i[1]]), alphahat[t-1][j[0]][j[1]]
-                    assert not np.isnan(alphahat[t][i[0]][i[1]]), t
-                    alphahat[t][i[0]][i[1]] += self.O.likelihood(i[0],y)
-                    assert not np.isnan(alphahat[t][i[0]][i[1]]), self.O.likelihood(i[0],y)
-                    assert not np.isinf(alphahat[t][i[0]][i[1]]), self.O.likelihood(i[0],y)
+                    alphahat[t][i[0]][i[1]] += ol[i[0],t]
                 
         return alphahat
     
