@@ -1,5 +1,8 @@
 import math
 import numpy as np
+import logging
+
+log = logging.getLogger('transition') 
 
 categorical = lambda alpha: np.random.multinomial(1,alpha).nonzero()[0][0]
 
@@ -27,18 +30,18 @@ class Transition:
         except:
             print self.A[i].flatten()
             raise
-
     
-    def sample_A(self, Z):
-
-        X = [z[0] for z in Z]
+    def sample_A(self, Zs):
         
         n = dict([(i,dict([(j,0) for j in self.states])) for i in self.states])
-        now = X[0]
-        for x in X:
-            if now != x:
-                n[now][x] += 1
-                now = x
+        
+        for Z in Zs:
+            X = [z[0] for z in Z]
+            now = X[0]
+            for x in X:
+                if now != x:
+                    n[now][x] += 1
+                    now = x
         
         A = np.zeros((self.K,self.K))
         
@@ -48,6 +51,8 @@ class Transition:
         #A = A + 0.0001
         #for i in self.states:
         #    A[i] /= A[i].sum()
+        
+        log.debug('sampled A:\n%s'%A)
         
         return A      
     

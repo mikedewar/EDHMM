@@ -11,10 +11,10 @@ import logging
 import sys
 
 logging.basicConfig(
-     stream=sys.stdout,
+    stream=sys.stdout,
     #filename="EDHMM.log", 
     #filemode="w",
-    level=logging.INFO
+    level=logging.DEBUG
 )
 
 A = Transition(
@@ -24,20 +24,24 @@ A = Transition(
 O = Gaussian(
     nu = 1,
     Lambda = np.array([1]), 
-    mu_0 = [-10, 0, 10], 
-    kappa = 1, 
+    mu_0 = [0, 0, 0], 
+    kappa = 0.01, 
     mu = [-10, 0, 10], 
-    tau = [np.array([[3]]),np.array([[3]]),np.array([[3]])]
+    tau = [
+        np.array([[3]]),
+        np.array([[3]]),
+        np.array([[3]])
+    ]
 )
 D = Poisson(
-    mu = [5,10,15], 
-    alpha=[50, 100, 150], 
-    beta=[10, 10, 10]
+    mu = [5,15,20], 
+    alpha=[1, 1, 1],
+    beta=[0.0001, 0.0001, 0.0001]
 )
 pi = Initial(K=3,beta=0.001)
 m = EDHMM(A,O,D,pi)
 
-T = 100
+T = 500
 
 X,Y,Dseq = m.sim(T)
 
@@ -47,7 +51,18 @@ np.save("Y.npy", Y)
 np.save("Z.npy", zip(X,Dseq))
 
 if True:
-    As, O_means, O_precisions, D_mus, Zs, L = m.beam(Y, its=300, burnin=100, name ="test")
+    
+    m.A.A = pb.array(
+       [[0, 0.5, 0.5], 
+        [0.5, 0, 0.5], 
+        [0.5, 0.5, 0]]
+    )
+    m.O.mu = [0,0,0]
+    m.D.mu = [1,1,1]
+    
+    As, O_means, O_precisions, D_mus, Zs, L = m.beam(
+        [Y], its=1000, burnin=500, name ="test", online=True
+    )
     np.save("As",As)
     np.save("O_m", O_means)
     np.save("O_p", O_precisions)

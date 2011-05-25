@@ -55,31 +55,38 @@ class Gaussian:
         assert state in self.states, (state, self.states)
         return mvnormal(self.mu[state], self.tau[state])
     
-    def sample_mean_prec(self, Z, Y):
-        X = [z[0] for z in Z]
+    def sample_mean_prec(self, Zs, Ys):
+        
         n = dict([(i,[]) for i in self.states])
-        for t,s in enumerate(X):
-            n[s].append(np.array([Y[t]]))
+        
+        for Z,Y in zip(Zs,Ys):
+            X = [z[0] for z in Z]
+            for t,s in enumerate(X):
+                n[s].append(np.array([Y[t]]))
         
         for i in self.states:
             n[i] = np.array(n[i]).T
+            n[i] = np.squeeze(n[i])
         
-        for i in self.states:
-            log.debug("state: %s"%i)
-            log.debug("observations: %s"%n[i].round(2))
-        
+        #for i in self.states:
+            #log.debug("state: %s"%i)
+            #log.debug("observations: %s"%n[i].round(2))
         
         taus, mus = [], []
         for i in self.states:
             
             S = np.cov(n[i])
             if len(n[i]):
-                ybar = np.mean(n[i],1)
+                try:
+                    ybar = np.mean(n[i],1)
+                except ValueError:
+                    ybar = np.mean(n[i])
             else:
                 #wtf? we don't have any of these observations...
                 # fall back on the prior mean
                 ybar = np.array(self.mu_0[i])
-            log.debug("ybar[%s]: %s"%(i,ybar))
+            #
+            #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (
                 (
                     (self.kappa/(self.kappa + len(n[i]))) * self.mu_0[i]
@@ -88,7 +95,7 @@ class Gaussian:
                     (len(n[i])/(self.kappa + len(n[i]))) * ybar
                 )
             )
-            log.debug("mu_n[%s]: %s"%(i,mu_n))
+            #log.debug("mu_n[%s]: %s"%(i,mu_n))
             kappa_n = self.kappa + len(n[i])
             nu_n = self.nu + len(n[i])
             Lambda_n = (
@@ -106,12 +113,18 @@ class Gaussian:
                 raise
             # form precion matrix
             tau = 1.0 / sigma
-            log.debug("tau[%s]: %s"%(i,tau))
-            tau_scaled = 1.0 / (sigma/kappa_n)
-            log.debug("tau_scaled[%s]: %s"%(i,tau_scaled))
+            #log.debug("tau[%s]: %s"%(i,tau))
+            try:
+                tau_scaled = np.linalg.inv(sigma/kappa_n)
+            except np.linalg.LingAlgError:
+                tau_scaled = 1.0 / (sigma/kappa_n)
+            #log.debug("tau_scaled[%s]: %s"%(i,tau_scaled))
             mu = mvnormal(mu_n, tau_scaled)
             taus.append(tau)
             mus.append(mu)
+            log.debug('sampled obs mean for state %s: %s'%(i,mus[-1]))
+            log.debug('sampled obs prec for state %s: %s'%(i,taus[-1]))
+            
         return mus, taus
     
     def update(self, Z, Y):
@@ -132,7 +145,6 @@ if __name__ == "__main__":
         mu = [-1,0,1], 
         tau = [0.5,0.5,0.5]
     )
-    
     x = np.linspace(-4,4,100)
     for i in range(3):
         pb.plot(x,[pb.exp(O.likelihood(i,xi)) for xi in x])

@@ -117,27 +117,28 @@ class EDHMM:
             D.append(d)
         return X, Y, D
     
-    def loglikelihood(self,Z,Y):
+    def loglikelihood(self,Zs,Ys):
         l = 0
-        for t in range(1,len(Z)):
-            i  = Z[t-1][0]
-            j  = Z[t][0]
-            di = Z[t-1][1]
-            y = Y[t]
+        for Z,Y in zip(Zs,Ys):
+            for t in range(1,len(Z)):
+                i  = Z[t-1][0]
+                j  = Z[t][0]
+                di = Z[t-1][1]
+                y = Y[t]
             
-            if i==j:
-                l += self.O.likelihood(j,y)
-            else:    
-                l += (
-                    self.A.likelihood(i,j) + 
-                    self.D.likelihood(i,di) + 
-                    self.O.likelihood(j,y)
-                )
+                if i==j:
+                    l += self.O.likelihood(j,y)
+                else:    
+                    l += (
+                        self.A.likelihood(i,j) + 
+                        self.D.likelihood(i,di) + 
+                        self.O.likelihood(j,y)
+                    )
         return l
     
     def slice_sample(self,Z):
         log.info('forming slice')
-        u = [np.log(0.0000001)]
+        u = [0.0000001]
         for t in range(1,len(Z)):
             i  = Z[t-1][0]
             j  = Z[t][0]
@@ -260,7 +261,6 @@ class EDHMM:
         log.info('running forward algorithm')
         
         # initialise alphahat
-        log.debug('getting support')
         alphahat = [{} for y in Y]            
         
         log.debug('calculating observation likelihoods')
@@ -268,11 +268,11 @@ class EDHMM:
         for i in self.states:
             for t,y in enumerate(Y):
                 ol[i,t] = self.O.likelihood(i,y)
-        
+            
         log.debug('starting iteration')
         for t,y in enumerate(Y):
             
-            log.debug('getting worthy for t: %s'%t)
+            #log.debug('getting worthy for t: %s'%t)
             
             if W is None:
                 if t == 0:
@@ -283,7 +283,7 @@ class EDHMM:
                 worthy = W[t]
                 
             
-            log.debug('calculating alpha[t]: %s'%t)
+            #log.debug('calculating alpha[t]: %s'%t)
             
             if t == 0:
                 # TODO this should be restricted
@@ -365,7 +365,7 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self,Y, its=100, burnin=50, name=None,online=False):
+    def beam(self, Y, its=100, burnin=50, name=None, online=False, sample_U=True):
         
         bored = False
         
@@ -380,20 +380,26 @@ class EDHMM:
                         self.A.likelihood(j,i) + self.D.likelihood(i,di)
                     )
         # sample auxillary variables from some small value
-        U = [np.random.uniform(0,np.log(0.0000001)) for y in Y]
+        U = [[np.random.uniform(0,0.0000001) for y in Yi] for Yi in Y]
         # get worthy samples given the relaxed U 
+        alphas = []
+        Z_samples = []
+        log.debug('perfomring inference')
         if online:
-            alpha = self.beam_forward(Y,U)
-            Z_sample = self.beam_backward_sample(alpha,U)
+            for i, Yi in enumerate(Y):
+                alphas.append(self.beam_forward(Yi,U[i]))
+                Z_samples.append(self.beam_backward_sample(alphas[i],U[i]))
         else:
-            W = self.worthy_transitions(U)
-            # get an initial state sequence
-            alpha = self.beam_forward(Y, U, W=W)
-            Z_sample = self.beam_backward_sample(alpha,U,W)
+            for i, Yi in enumerate(Y):
+                W = self.worthy_transitions(U[i])
+                # get an initial state sequence
+                alphas.append(self.beam_forward(Yi, U[i], W=W))
+                Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
         # do the initial update
-        self.D.update(Z_sample)
-        self.O.update(Z_sample, Y)
-        self.A.update(Z_sample)
+        log.debug('updating samples')
+        self.D.update(Z_samples)
+        self.O.update(Z_samples, Y)
+        self.A.update(Z_samples)
         
         # count how many iterations we've done so far
         count = 0
@@ -420,27 +426,34 @@ class EDHMM:
             log.info('running sample %s'%count)
             # slice
             start = time.time()
-            U = self.slice_sample(Z_sample)
-            W = self.worthy_transitions(U)
+            if sample_U:
+                U = []
+                for Z in Z_samples:
+                    U.append(self.slice_sample(Z))
+            
             log.debug('slice sample took %ss'%(time.time() - start))
             # states
             start = time.time()
+            alphas = []
+            Z_samples = []
             if online:
-                alpha = self.beam_forward(Y,U)
-                Z_sample = self.beam_backward_sample(alpha,U)
+                for i, Yi in enumerate(Y):
+                    alphas.append(self.beam_forward(Yi,U[i]))
+                    Z_samples.append(self.beam_backward_sample(alphas[i],U[i]))
                 log.debug('inference took %ss'%(time.time() - start))
             else:
-                alpha = self.beam_forward(Y, U, W=W)
-                log.debug('forward pass took %ss'%(time.time() - start))
-                start = time.time()
-                Z_sample = self.beam_backward_sample(alpha,U,W)
-                log.debug('backward sample took %ss'%(time.time() - start))
+                for i, Yi in enumerate(Y):
+                    W = self.worthy_transitions(U[i])
+                    # get an initial state sequence
+                    alphas.append(self.beam_forward(Yi, U[i], W=W))
+                    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
+                log.debug('inference took %ss'%(time.time() - start))
             # parameters
-            self.D.update(Z_sample)
-            self.O.update(Z_sample, Y)
-            self.A.update(Z_sample)
+            self.D.update(Z_samples)
+            self.O.update(Z_samples, Y)
+            self.A.update(Z_samples)
             # loglikelihood
-            l = self.loglikelihood(Z_sample,Y)
+            l = self.loglikelihood(Z_samples,Y)
             L.append(l)
             log.info("log likelihood at iteration %s: %s"%(count,l))
             if count > burnin:
@@ -451,20 +464,19 @@ class EDHMM:
                 log.debug("O precisions: %s"%O_precisions[-1])
                 D_mus.append(self.D.mu)
                 log.debug("D rates: %s"%D_mus[-1])
-                Zs.append(Z_sample)
+                Zs.append(Z_samples)
                 
                 if name:
-                    if not count % 20:
+                    if not count % 10:
                         log.debug('writing samples to disk')
                         # continually overwrite so we can quit at any time
                         # this will slow things down a LOT
-                        np.save("%s_As"%name,As)
-                        np.save("%s_O_m"%name, O_means)
-                        np.save("%s_O_p"%name, O_precisions)
-                        np.save("%s_D_mus"%name, D_mus)
-                        np.save("%s_Zs"%name, Zs)
-                        np.save("%s_L"%name, L)
-
+                        np.save("%s_As_%s"%(name,count), As)
+                        np.save("%s_O_m_%s"%(name,count), O_means)
+                        np.save("%s_O_p_%s"%(name,count), O_precisions)
+                        np.save("%s_D_mus_%s"%(name,count), D_mus)
+                        #np.save("%s_Zs"%name, Zs)
+                        np.save("%s_L_%s"%(name,count), L)
             # stop
             if count > its:
                 bored = True

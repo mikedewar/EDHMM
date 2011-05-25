@@ -19,38 +19,44 @@ class Poisson:
     def sample_d(self, state):
         return np.random.poisson(self.mu[state])
     
-    def sample_mu(self, Z):
+    def sample_mu(self, Zs):
         
-        X = [z[0] for z in Z]
         k = dict([(i,[]) for i in self.states])
-        now = X[0]
-        for s in X:
-            if now == s:
-                try:
-                    k[now][-1] += 1
-                except IndexError:
-                    # initial condition
-                    k[now] = [1]
-            else:
-                now = s
-                k[now].append(1)
         
-        for i in self.states:
-            log.debug("state: %s"%i)
-            log.debug("observations: %s"%k[i])
+        for Z in Zs:
+            X = [z[0] for z in Z]
+            now = X[0]
+            for s in X:
+                if now == s:
+                    try:
+                        k[now][-1] += 1
+                    except IndexError:
+                        # initial condition
+                        k[now] = [1]
+                else:
+                    now = s
+                    k[now].append(1)
+        
+        #for i in self.states:
+            #log.debug("state: %s"%i)
+            #log.debug("observations: %s"%k[i])
         
         out=[]
         for i in self.states:
             alpha = self.alpha[i] + sum(k[i])
             beta = self.beta[i] + len(k[i])
             out.append(np.random.gamma(alpha, 1./beta))
+            log.debug('sampled rate parameter for state %s: %s'%(i,out[-1]))
+            if out[-1] > 1000:
+                print alpha # 1
+                print beta #  0.00001
         return out
     
     def update(self, Z):
         self.mu = self.sample_mu(Z)
     
     def support(self, state, threshold=0.001):
-        log.info('finding support')
+        log.info('finding support for state %s'%state)
         # walk left
         d, dl = int(self.mu[state]), 1
         lold = self.likelihood(state,d)
@@ -69,6 +75,7 @@ class Poisson:
             dl = abs(lnew-lold)
             lold = lnew
         right = max(1,d)
+        log.debug('support for state %s: %s to %s'%(state,int(left),int(right)))
         return int(left), int(right)
         
         
