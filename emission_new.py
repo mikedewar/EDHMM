@@ -33,8 +33,6 @@ class Gaussian:
     
     def sample_obs(self,state):
         assert state in self.states, (state, self.states)
-        if state == 2:
-            print self.tau[state]
         return mvnormal(self.mu[state], self.tau[state])
     
     def sample_mean_prec(self, Zs, Ys):
