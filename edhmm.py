@@ -1,20 +1,17 @@
 import numpy as np
 import logging
-import pymc
-import copy
 import time
 
 import pprint
 
 pp = pprint.PrettyPrinter(indent=4)
 
-from utils import *
 from emission_new import Gaussian
 from duration_new import Poisson
 from transition_new import Transition
-from initial import *
+from initial import Initial
 
-from log_space import *
+from log_space import elnsum
 
 np.seterr(all='warn')
 log = logging.getLogger('edhmm')
@@ -23,7 +20,6 @@ class Categorical:
     """
     Defines a Categorical Distribution
     """
-    @types(p=np.ndarray)
     def __init__(self,p):
         assert all(p>=0), p
         p += 0.000000001
@@ -77,8 +73,6 @@ class EDHMM:
        
         
         
-    
-    @types(T=int)
     def gen(self,T):
         """
         generator that yields state/observation tuples
@@ -100,7 +94,6 @@ class EDHMM:
                 assert x in self.states, (xold,x)
                 d = self.D.sample_d(x)
     
-    @types(T=int)
     def sim(self,T):
         """
         Draws a sequence of length T from the EDHMM
@@ -484,7 +477,7 @@ class EDHMM:
                         np.save("%s_O_m_%s"%(name,count), O_means)
                         np.save("%s_O_p_%s"%(name,count), O_precisions)
                         np.save("%s_D_mus_%s"%(name,count), D_mus)
-                        np.save("%s_Zs"%name, np.array(Zs))
+                        #np.save("%s_Zs"%name, np.array(Zs))
                         np.save("%s_L_%s"%(name,count), L)
             # stop
             if count > its:
