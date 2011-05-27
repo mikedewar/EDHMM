@@ -270,10 +270,15 @@ class EDHMM:
                 ol[i,t] = self.O.likelihood(i,y)
             
         log.debug('starting iteration')
+
+
+        worthy_time = 0
+        alpha_time = 0
+
         for t,y in enumerate(Y):
             
             #log.debug('getting worthy for t: %s'%t)
-            
+            start = time.time() 
             if W is None:
                 if t == 0:
                     worthy = self.get_initial_worthy(U[t])
@@ -281,12 +286,12 @@ class EDHMM:
                     worthy = self.get_worthy(U[t],worthy)
             else:
                 worthy = W[t]
-                
+            worthy_time += time.time() - start
             
             #log.debug('calculating alpha[t]: %s'%t)
             
+            start = time.time() 
             if t == 0:
-                # TODO this should be restricted
                 for i in self.states:
                     alphahat[t][i] = {}
                     for d in [1]+range(self.left[i],self.right[i]+10):
@@ -323,7 +328,11 @@ class EDHMM:
                             pass
                     
                     alphahat[t][i[0]][i[1]] += ol[i[0],t]
+            alpha_time += time.time() - start
                 
+
+        log.debug('time spent building alpha: %s'%alpha_time)
+        log.debug('time spent finding worthy: %s'%worthy_time)
         return alphahat
     
     def beam_backward_sample(self, alphahat, U=None, W=None):
@@ -475,7 +484,7 @@ class EDHMM:
                         np.save("%s_O_m_%s"%(name,count), O_means)
                         np.save("%s_O_p_%s"%(name,count), O_precisions)
                         np.save("%s_D_mus_%s"%(name,count), D_mus)
-                        #np.save("%s_Zs"%name, Zs)
+                        np.save("%s_Zs"%name, np.array(Zs))
                         np.save("%s_L_%s"%(name,count), L)
             # stop
             if count > its:
