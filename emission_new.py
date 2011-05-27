@@ -20,9 +20,7 @@ class Gaussian:
         
         self.mu = mu # mu is the current value of the mean for each state
         self.tau = tau # tau is the current precision matrix for each state
-        
-       
-        
+                
         self.states = range(len(mu))
         self.K = len(self.states)
         
@@ -48,7 +46,7 @@ class Gaussian:
             n[i] = np.array(n[i]).T
             n[i] = np.squeeze(n[i])
         
-        
+        #print n[i]
         #for i in self.states:
             #log.debug("state: %s"%i)
             #log.debug("observations: %s"%n[i].round(2))
@@ -66,8 +64,16 @@ class Gaussian:
                 # fall back on the prior mean
                 ybar = np.array(self.mu_0[i])
             #
-            
-            S = np.sum([np.outer((yi - ybar),(yi - ybar)) for yi in n[i]], 0)
+            ybar = ybar.flatten()
+            try:
+                S = np.sum([
+                    np.outer((yi - ybar),(yi - ybar)) 
+                    for yi in n[i].T
+                ], 0)
+            except:
+                print yi
+                print ybar
+                raise
             
             #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (
