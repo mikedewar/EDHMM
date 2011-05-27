@@ -67,7 +67,7 @@ class Gaussian:
                 ybar = np.array(self.mu_0[i])
             #
             
-            S = np.sum([(yi - ybar)*(yi - ybar).T for yi in n[i]], 0)
+            S = np.sum([np.outer((yi - ybar),(yi - ybar)) for yi in n[i]], 0)
             
             #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (

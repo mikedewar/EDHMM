@@ -1,4 +1,3 @@
-import math
 import numpy as np
 import logging
 
@@ -82,8 +81,23 @@ class Poisson:
 if __name__ == "__main__":
     import pylab as pb
     Z = np.load('Z.npy')
-    D = Poisson(alpha=[3,3,3], beta=[0.8,0.5,0.25], mu=[3,5,10])
+    D = Poisson(
+        mu = [1, 1, 1], 
+        alpha=[1, 1, 1],
+        beta=[0.0001, 0.0001, 0.0001]
+    )
+    pb.figure()
     for j in range(3):
-        mus = np.array([D.sample_mu(Z)[j] for i in range(100)])
+        mus = np.array([D.sample_mu([Z])[j] for i in range(100)])
         pb.hist(mus,alpha=0.5)
+    
+    
+    pb.figure()
+    for j in range(3):
+        d = []
+        for i in range(1000):
+            D.update([Z])
+            d.append(D.sample_d(j))
+        pb.hist(d,alpha=0.5)
+    
     pb.show()
