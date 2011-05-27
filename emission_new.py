@@ -21,13 +21,7 @@ class Gaussian:
         self.mu = mu # mu is the current value of the mean for each state
         self.tau = tau # tau is the current precision matrix for each state
         
-        try:
-            self.log_det_inv_tau = [
-                np.log(np.linalg.det(np.linalg.inv(t)))
-                for t in self.tau
-            ]
-        except IndexError:
-            self.log_det_inv_tau = np.log([1.0/t for t in self.tau])
+       
         
         self.states = range(len(mu))
         self.K = len(self.states)
@@ -35,24 +29,12 @@ class Gaussian:
         
     def likelihood(self, state, obs):
         assert state in self.states, (state, self.states)
-        #x = (obs - self.mu[state])
-        #try:
-        #    k = len(x)
-        #except TypeError:
-        #    k = 1
-        #y = float(
-        #    - (0.5 * k *log_2_pi) 
-        #    - (0.5 * self.log_det_inv_tau[state]) 
-        #    - (0.5 * np.inner(np.inner(x,self.tau[state]),x))
-        #)
-        z = pymc.mv_normal_like(obs, self.mu[state], self.tau[state])
-        #print y
-        #print z
-        #print "\n"
-        return z
+        return pymc.mv_normal_like(obs, self.mu[state], self.tau[state])
     
     def sample_obs(self,state):
         assert state in self.states, (state, self.states)
+        if state == 2:
+            print self.tau[state]
         return mvnormal(self.mu[state], self.tau[state])
     
     def sample_mean_prec(self, Zs, Ys):
@@ -68,6 +50,7 @@ class Gaussian:
             n[i] = np.array(n[i]).T
             n[i] = np.squeeze(n[i])
         
+        
         #for i in self.states:
             #log.debug("state: %s"%i)
             #log.debug("observations: %s"%n[i].round(2))
@@ -75,7 +58,6 @@ class Gaussian:
         taus, mus = [], []
         for i in self.states:
             
-            S = np.cov(n[i])
             if len(n[i]):
                 try:
                     ybar = np.mean(n[i],1)
@@ -86,6 +68,9 @@ class Gaussian:
                 # fall back on the prior mean
                 ybar = np.array(self.mu_0[i])
             #
+            
+            S = np.sum([(yi - ybar)*(yi - ybar).T for yi in n[i]], 0)
+            
             #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (
                 (
@@ -101,18 +86,20 @@ class Gaussian:
             Lambda_n = (
                 self.Lambda + 
                 S + 
-                (self.kappa * len(n[i]))/(self.kappa + len(n[i])) *
-                (ybar - self.mu_0[i])*(ybar-self.mu_0[i]).T
+                (
+                    (self.kappa * len(n[i]))/(self.kappa + len(n[i])) *
+                    (ybar - self.mu_0[i])*(ybar-self.mu_0[i]).T
+                )
             )
             try:
                 sigma = invwishart(nu_n, np.linalg.inv(Lambda_n))
             except np.linalg.LinAlgError:
-                sigma =  (invwishart(nu_n, 1.0/Lambda_n))
+                sigma = invwishart(nu_n, 1.0/Lambda_n)
             except:
                 print Lambda_n
                 raise
             # form precion matrix
-            tau = 1.0 / sigma
+            tau = np.linalg.inv(sigma)
             #log.debug("tau[%s]: %s"%(i,tau))
             try:
                 tau_scaled = np.linalg.inv(sigma/kappa_n)
@@ -138,21 +125,29 @@ if __name__ == "__main__":
     Z = np.load('Z.npy')
     Y = np.load('Y.npy')
     O = Gaussian(
-        nu = 2, 
+        nu = 1,
         Lambda = np.array([1]), 
-        mu_0 = [-5, 0, 5], 
-        kappa = 1, 
-        mu = [-1,0,1], 
-        tau = [0.5,0.5,0.5]
+        mu_0 = [0, 0, 0], 
+        kappa = 0.01, 
+        mu = [-3, 0, 3], 
+        tau = [
+            np.array([[1]]),
+            np.array([[1]]),
+            np.array([[1]])
+        ]
     )
-    x = np.linspace(-4,4,100)
-    for i in range(3):
-        pb.plot(x,[pb.exp(O.likelihood(i,xi)) for xi in x])
-    pb.show()
-    
-    #print Y
-    #mus, sigmas = O.sample_mean_prec(Z,Y)
-    #for j in range(3):
-    #    mus = np.array([O.sample_mean_prec(Z,Y)[0][j] for i in range(100)]).flatten()
-    #    pb.hist(mus,alpha=0.5)
+    #x = np.linspace(-4,4,100)
+    #for i in range(3):
+    #    pb.plot(x,[pb.exp(O.likelihood(i,xi)) for xi in x])
     #pb.show()
+    #mus, sigmas = O.sample_mean_prec(Z,Y)
+    pb.figure()
+    for j in range(3):
+        mus = np.array([O.sample_mean_prec([Z],[Y])[0][j] for i in range(100)]).flatten()
+        pb.hist(mus,alpha=0.5)
+        
+    pb.figure()
+    for j in range(3):
+        taus = np.array([O.sample_mean_prec([Z],[Y])[1][j] for i in range(100)]).flatten()
+        pb.hist(taus,alpha=0.5)
+    pb.show()
