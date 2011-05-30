@@ -101,7 +101,7 @@ class Gaussian:
             
             if any(np.isnan(Lambda_n)):
                 Lambda_n = self.Lambda
-            if any(np.isnan(nu_n)):
+            if np.isnan(nu_n):
                 nu_n - self.nu
             
             assert not any(np.isnan(Lambda_n))
