@@ -54,26 +54,25 @@ class Gaussian:
         taus, mus = [], []
         for i in self.states:
             
-            try:
+            if len(n[i]) > 0:
                 try:
                     ybar = np.mean(n[i],1)
                 except ValueError:
                     ybar = np.mean(n[i])
-            except:
-                raise
-                #wtf? we don't have any of these observations...
-                # fall back on the prior mean
-                ybar = np.array(self.mu_0[i])
-            #
-            ybar = ybar.flatten()
-            try:
+                
+                ybar = ybar.flatten()
+                
                 S = np.sum([
                     np.outer((yi - ybar),(yi - ybar)) 
                     for yi in n[i].T
                 ], 0)
-            except:
-                print ybar
-                raise
+            else:
+                #wtf? we don't have any of these observations...
+                # fall back on the prior mean and we won't updated
+                # the precision
+                ybar = np.array(self.mu_0[i])        
+                S = 0
+                
                 
             #assert not np.isnan(S), S
             #assert not np.isinf(S), S
@@ -125,7 +124,11 @@ class Gaussian:
             except np.linalg.LingAlgError:
                 tau_scaled = 1.0 / (sigma/kappa_n)
             #log.debug("tau_scaled[%s]: %s"%(i,tau_scaled))
-            mu = mvnormal(mu_n, tau_scaled)
+            try:
+                mu = mvnormal(mu_n, tau_scaled)
+            except ValueError:
+                mu = self.mu_0[i]
+                log.debug('fell back onto the prior mu_0 probably due to lack of observations in this state')
             taus.append(tau)
             mus.append(mu)
             log.debug('sampled obs mean for state %s: %s'%(i,mus[-1]))
