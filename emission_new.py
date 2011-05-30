@@ -75,8 +75,8 @@ class Gaussian:
                 print ybar
                 raise
                 
-            assert not np.isnan(S), S
-            assert not np.isinf(S), S
+            #assert not np.isnan(S), S
+            #assert not np.isinf(S), S
             
             #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (
