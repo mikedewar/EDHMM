@@ -1,7 +1,7 @@
-import numpy as np
+from numpy import log, exp
 
 def elnsum(lnx,lny):
     if lnx > lny:
-        return lnx + np.log(1 + np.exp(lny - lnx))
+        return lnx + log(1 + exp(lny - lnx))
     else:
-        return lny + np.log(1 + np.exp(lnx - lny))
+        return lny + log(1 + exp(lnx - lny))

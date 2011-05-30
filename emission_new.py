@@ -54,12 +54,13 @@ class Gaussian:
         taus, mus = [], []
         for i in self.states:
             
-            if len(n[i]):
+            try:
                 try:
                     ybar = np.mean(n[i],1)
                 except ValueError:
                     ybar = np.mean(n[i])
-            else:
+            except:
+                raise
                 #wtf? we don't have any of these observations...
                 # fall back on the prior mean
                 ybar = np.array(self.mu_0[i])
@@ -71,9 +72,11 @@ class Gaussian:
                     for yi in n[i].T
                 ], 0)
             except:
-                print yi
                 print ybar
                 raise
+                
+            assert not np.isnan(S), S
+            assert not np.isinf(S), S
             
             #log.debug("ybar[%s]: %s"%(i,ybar))
             mu_n = (
@@ -98,7 +101,11 @@ class Gaussian:
             try:
                 sigma = invwishart(nu_n, np.linalg.inv(Lambda_n))
             except np.linalg.LinAlgError:
-                sigma = invwishart(nu_n, 1.0/Lambda_n)
+                try:
+                    sigma = invwishart(nu_n, 1.0/Lambda_n)
+                except:
+                    print Lambda_n
+                    raise
             except:
                 print Lambda_n
                 raise

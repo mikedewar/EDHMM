@@ -36,15 +36,16 @@ class Poisson:
                     now = s
                     k[now].append(1)
         
-        #for i in self.states:
-            #log.debug("state: %s"%i)
-            #log.debug("observations: %s"%k[i])
+        for i in self.states:
+            log.debug("state: %s"%i)
+            log.debug("observations: %s"%k[i])
         
         out=[]
         for i in self.states:
             alpha = self.alpha[i] + sum(k[i])
             beta = self.beta[i] + len(k[i])
-            out.append(np.random.gamma(alpha, 1./beta))
+            log.debug('drawing mu from a gamma with alpha=%s and beta=%s'%(alpha,beta))
+            out.append(np.random.gamma(alpha, 1.0/beta))
             log.debug('sampled rate parameter for state %s: %s'%(i,out[-1]))
             if out[-1] > 1000:
                 print alpha # 1
@@ -54,7 +55,7 @@ class Poisson:
     def update(self, Z):
         self.mu = self.sample_mu(Z)
     
-    def support(self, state, threshold=0.001):
+    def support(self, state, threshold=0.00001):
         log.info('finding support for state %s'%state)
         # walk left
         d, dl = int(self.mu[state]), 1

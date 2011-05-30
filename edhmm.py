@@ -6,11 +6,6 @@ import pprint
 
 pp = pprint.PrettyPrinter(indent=4)
 
-from emission_new import Gaussian
-from duration_new import Poisson
-from transition_new import Transition
-from initial import Initial
-
 from log_space import elnsum
 
 np.seterr(all='warn')
@@ -22,6 +17,7 @@ class Categorical:
     """
     def __init__(self,p):
         assert all(p>=0), p
+        assert not any(np.isinf(p))
         p += 0.000000001
         assert p.sum()
         self.p = p/p.sum()
@@ -30,11 +26,18 @@ class Categorical:
         #print self.p
     
     def sample(self):
+        if self.p.shape == ():
+            return 0
         try:
             x = np.random.multinomial(1,self.p)
         except ValueError:
             #print self.p
             #print self.p.sum()
+            raise
+        except TypeError:
+            print self.p
+            print type(self.p)
+            print self.p.shape
             raise
         return np.where(x==1)[0][0]
 
@@ -129,124 +132,99 @@ class EDHMM:
                     )
         return l
     
-    def slice_sample(self,Z):
+    def set_transition_likelihood(self):
+        
+        
+        if hasattr(self,'l'):
+            old_l = self.l
+            old_durations = np.array([k[2:] for k in old_l]).flatten()
+            right = max(old_durations.max(), max(self.right))
+                
+        else:
+            right = max(self.right)
+        
+        log.info('forming transition likelihoods from d = 1 to %s'%right)
+        
+        self.l = {}
+        for i in self.states:
+            for j in self.states:
+                for di in range(1,right+1):
+                    for dj in range(1,right+1):
+                        if di == 1:
+                            self.l[(i,j,di,dj)] = np.exp(
+                                self.A.likelihood(i,j) + self.D.likelihood(j,dj)
+                            )
+                        elif i == j and dj==di-1:
+                            self.l[(i,j,di,dj)] = 1
+                        else:
+                            self.l[(i,j,di,dj)] = 0
+                        
+    
+    def set_duration_support(self):
+        self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+        
+    def slice_sample(self,Z, min_u=0):
         log.info('forming slice')
-        u = [0.0000001]
+        u = [min_u]
+                
         for t in range(1,len(Z)):
             i  = Z[t-1][0]
             j  = Z[t][0]
             di = Z[t-1][1]
-            l = self.A.likelihood(i,j) + self.D.likelihood(i,di)
-            u.append(np.random.uniform(low=0, high=np.exp(l)))
+            dj = Z[t][1]
+            try:
+                u.append(np.random.uniform(low=min_u, high=self.l[(i,j,di,dj)]))
+            except KeyError:
+                raise
         return np.array(u)
         
     def get_worthy(self,u,old_worthy):
         worthy = {}
         # we only consider those transitions that are possible from 
         # t-1
-        for j,dj in old_worthy:                    
-            # if a transition occured...
-            if dj == 1:
-                # which transitions are worthy?
-                for i in self.states:
-                    for di in range(1, self.right[i]+1):
-                        # if the probability is worthy..
-                        if self.l[(i,j,di)] > u:
-                            # add it to the list!
-                            try:
-                                worthy[(i,di)].append((j,dj))
-                            except KeyError:
-                                # (or start a new list)
-                                worthy[(i,di)] = [(j,dj)]
-            # if a transition didn't occur, then we only add the 
-            # decrement i==j, di = dj-1
-            else:
-                i = j
-                di = dj - 1
-                try:
-                    worthy[(i,di)].append((j,dj))
-                except KeyError:
-                    worthy[(i,di)] = [(j,dj)]
+        for i,di in old_worthy:                    
+            # which transitions are worthy?
+            for j in self.states:
+                for dj in range(1, self.right[i]+1):
+                    # if the probability is worthy..
+                    l = self.l[(i,j,di,dj)]
+                    #try:
+                    #    l = self.l[(i,j,di,dj)]
+                    #except KeyError:
+                        # sometimes if the duration shrinks we don't have the
+                        # likelihood for longer durations. So we need to
+                        # them here!
+                    #    if di == 1:
+                    #        l = np.exp(self.A.likelihood(i,j) + self.D.likelihood(j,dj))
+                    #    else:
+                    #        if i==j and dj==di-1:
+                    #            l = 1
+                    #        else:
+                    #            l = 0
+                    
+                    if l > u:
+                        # add it to the list!
+                        try:
+                            worthy[(j,dj)].append((i,di))
+                        except KeyError:
+                            # (or start a new list)
+                            worthy[(j,dj)] = [(i,di)]
+                    
+        
+        assert worthy, (u, old_worthy)
         return worthy
     
     def get_initial_worthy(self,u):
         worthy = {}
-        for j in self.states:
-            for dj in range(self.left[j],self.right[j]+1):
-                if dj == 1:
-                    for i in self.states:
-                        for di in range(self.left[i],self.right[i]+1):
-                            if self.l[(i,j,di)] > u:
-                                try:
-                                    worthy[(i,di)].append((j,dj))
-                                except KeyError:
-                                    worthy[(i,di)] = [(j,dj)]
-                else:
-                    i = j
-                    di = dj - 1
-                    try:
-                        worthy[(i,di)].append((j,dj))
-                    except KeyError:
-                        worthy[(i,di)] = [(j,dj)]
-        return worthy
-    
-    def worthy_transitions(self, U):
-        log.info('calculating transitions worthy of u')
-        # find those z_t and z_t-1 that are worthy, given u
-        worthy = [None for u in U]
-        
-        log.debug('finding worthy durations for initial condition')
-        worthy[0] = {}
-        for j in self.states:
-            for dj in range(self.left[j],self.right[j]+1):
-                if dj == 1:
-                    for i in self.states:
-                        for di in range(self.left[i],self.right[i]+1):
-                            if self.l[(i,j,di)] > U[0]:
-                                try:
-                                    worthy[0][(i,di)].append((j,dj))
-                                except KeyError:
-                                    worthy[0][(i,di)] = [(j,dj)]
-                else:
-                    i = j
-                    di = dj - 1
-                    try:
-                        worthy[0][(i,di)].append((j,dj))
-                    except KeyError:
-                        worthy[0][(i,di)] = [(j,dj)]
-        
-        log.debug('finding worthy durations over time')
-        for t,u_t in enumerate(U):
-            if t > 0: 
-                worthy[t] = {}
-                # we only consider those transitions that are possible from 
-                # t-1
-                for j,dj in worthy[t-1]:                    
-                    # if a transition occured...
-                    if dj == 1:
-                        # which transitions are worthy?
-                        for i in self.states:
-                            for di in range(1, self.right[i]+1):
-                                # if the probability is worthy..
-                                if self.l[(i,j,di)] > u_t:
-                                    # add it to the list!
-                                    try:
-                                        worthy[t][(i,di)].append((j,dj))
-                                    except KeyError:
-                                        # (or start a new list)
-                                        worthy[t][(i,di)] = [(j,dj)]
-                    # if a transition didn't occur, then we only add the 
-                    # decrement i==j, di = dj-1
-                    else:
-                        i = j
-                        di = dj - 1
-                        try:
-                            worthy[t][(i,di)].append((j,dj))
-                        except KeyError:
-                            worthy[t][(i,di)] = [(j,dj)]
-                
-            assert worthy[t], (worthy[t-1], worthy[t-2], u_t)                          
-                
+        for i in self.states:
+            for di in range(self.left[i],self.right[i]+1):
+                for j in self.states:
+                    for dj in range(self.left[j],self.right[j]+1):
+                        if self.l[(i,j,di,dj)] > u:
+                            try:
+                                worthy[(j,dj)].append((i,di))
+                            except KeyError:
+                                worthy[(j,dj)] = [(i,di)]
         return worthy
             
     def beam_forward(self, Y, U, W=None):        
@@ -264,13 +242,12 @@ class EDHMM:
             
         log.debug('starting iteration')
 
-
         worthy_time = 0
         alpha_time = 0
 
         for t,y in enumerate(Y):
             
-            #log.debug('getting worthy for t: %s'%t)
+            #log.debug('getting worthy for t: %s using auxiliary variable %s'%(t,U[t]))
             start = time.time() 
             if W is None:
                 if t == 0:
@@ -281,23 +258,25 @@ class EDHMM:
                 worthy = W[t]
             worthy_time += time.time() - start
             
+            #pp.pprint(worthy)
+            
             #log.debug('calculating alpha[t]: %s'%t)
             
             start = time.time() 
             if t == 0:
                 for i in self.states:
                     alphahat[t][i] = {}
-                    for d in [1]+range(self.left[i],self.right[i]+10):
+                    for d in [1]+range(self.left[i],self.right[i]+1):
                         alphahat[t][i][d] = self.pi.likelihood((i,d))
             
             else:
                 for i,J in worthy.items():
                     # initialise alpahat[t] if necessary
                     if i[0] not in alphahat[t]:
-                        alphahat[t][i[0]] = {i[1]:0}
+                        alphahat[t][i[0]] = {i[1]:-1000000000000}
                     else:
                         if i[1] not in alphahat[t][i[0]]:
-                            alphahat[t][i[0]][i[1]] = 0
+                            alphahat[t][i[0]][i[1]] = -1000000000000
                     
                     # here i is those (state,duration)s worth figuring out for 
                     # alpha hat. Then J is a list of those indices into the 
@@ -321,6 +300,15 @@ class EDHMM:
                             pass
                     
                     alphahat[t][i[0]][i[1]] += ol[i[0],t]
+                    #print "alpha[%s][%s][%s] = %s"%(t,i[0],i[1], alphahat[t][i[0]][i[1]])
+                    assert not np.isinf(alphahat[t][i[0]][i[1]])
+            
+            try:
+                assert alphahat[t], "alpha[%s]:%s"%(t,alphahat[t])
+            except AssertionError:
+                print "alpha[%s]:%s"%(t-1,alphahat[t-1])
+                print worthy
+                raise
             alpha_time += time.time() - start
                 
 
@@ -328,26 +316,39 @@ class EDHMM:
         log.debug('time spent finding worthy: %s'%worthy_time)
         return alphahat
     
-    def beam_backward_sample(self, alphahat, U=None, W=None):
+    def beam_backward_sample(self, alphahat, U, W=None):
         
-        log.info('sampling state sequence')
+        log.info('backward sampling state sequence')
         
         def sample_z(a):
-            m = max(max([a[i].values() for i in a.keys()]))
+            vals = []
+            for i in a:
+                vals.extend(a[i].values())
+            try:
+                m = np.array(vals).max()
+            except ValueError:
+                print a
+                print vals
+                raise
             p = [np.exp(np.array(a[i].values()) - m).sum() for i in a.keys()]
+            
             xi = Categorical(np.array(p)).sample()
             x = a.keys()[xi] 
             try:
-                di = Categorical(
-                    np.exp(np.array(a[x].values()) - max(a[x].values()))
-                ).sample()
-            except TypeError:
-                di=0
+                p = np.exp(np.array(a[x].values()) - max(a[x].values()))
+                di = Categorical(p).sample()
+            except AssertionError:
+                print p
+                raise
             d = a[x].keys()[di]
             return x,d
         
         T = len(alphahat)
-        Z = [sample_z(alphahat[-1])]
+        try:
+            Z = [sample_z(alphahat[-1])]
+        except ValueError:
+            print alphahat[-1]
+            raise
         for t in reversed(xrange(T-1)):
             # pick the subset of alphahats
             # here w[t+1][Z[-1]] is a list of the possible zs you can sample
@@ -361,47 +362,67 @@ class EDHMM:
             #        a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
             #    except KeyError:
             #        a[j[0]][j[1]] = 0
-            z = sample_z(alphahat[t])
+            
+            # we need to build up a pair of worthys
+            
+            # first, the get_worthy method uses old_worthy to make sure that 
+            # the transitions are consistent. So we need just the keys in
+            # alphahat as we know that this is 'old worthy' for the worthy
+            # variables at t+1
+            old_worthy = {}
+            for state in alphahat[t]:
+                for duration in alphahat[t][state]:
+                    key = (state, duration)
+                    old_worthy[key] = 0
+            
+            worthy = self.get_worthy(U[t+1],old_worthy)
+            
+            a = dict([(i,{}) for i in self.states])
+            try:
+                worthy[Z[-1]]
+            except KeyError:
+                print worthy
+                raise
+            
+            for j in worthy[Z[-1]]:
+                try:
+                    a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
+                except KeyError:
+                    a[j[0]][j[1]] = -10000000
+            
+            z = sample_z(a)
             
             Z.append(z)
         Z.reverse()
         return Z
                 
-    def beam(self, Y, its=100, burnin=50, name=None, online=False, sample_U=True):
+    def beam(self, Y, min_u=0, its=100, burnin=50, name=None, online=False, sample_U=True):
         
         bored = False
         
-        self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+        # get support of duration distributions
+        self.set_duration_support()
+        self.set_transition_likelihood()
         
-        log.debug('calculating likelihoods')
-        self.l = {}
-        for i in self.states:
-            for j in self.states:
-                for di in range(1,max(self.right)+1):
-                    self.l[(i,j,di)] = np.exp(
-                        self.A.likelihood(j,i) + self.D.likelihood(i,di)
-                    )
         # sample auxillary variables from some small value
-        U = [[np.random.uniform(0,0.0000001) for y in Yi] for Yi in Y]
+        U = [[np.random.uniform(min_u, 0.000000001) for y in Yi] for Yi in Y]
+        
         # get worthy samples given the relaxed U 
         alphas = []
         Z_samples = []
+        
         log.debug('perfomring inference')
         if online:
             for i, Yi in enumerate(Y):
                 alphas.append(self.beam_forward(Yi,U[i]))
                 Z_samples.append(self.beam_backward_sample(alphas[i],U[i]))
         else:
-            for i, Yi in enumerate(Y):
-                W = self.worthy_transitions(U[i])
-                # get an initial state sequence
-                alphas.append(self.beam_forward(Yi, U[i], W=W))
-                Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
-        # do the initial update
-        log.debug('updating samples')
-        self.D.update(Z_samples)
-        self.O.update(Z_samples, Y)
-        self.A.update(Z_samples)
+            raise NotImplementedError
+            #for i, Yi in enumerate(Y):
+            #    W = self.worthy_transitions(U[i])
+            #    # get an initial state sequence
+            #    alphas.append(self.beam_forward(Yi, U[i], W=W))
+            #    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
         
         # count how many iterations we've done so far
         count = 0
@@ -415,25 +436,21 @@ class EDHMM:
         
         # block gibbs
         while not bored:
+            log.info('running sample %s'%count)
+            
             log.debug('getting support')
             self.left,self.right = zip(*[self.D.support(i) for i in self.states])
-            log.debug('calculating likelihoods')
-            self.l = {}
-            for i in self.states:
-                for j in self.states:
-                    for di in range(1,max(self.right)+1):
-                        self.l[(i,j,di)] = np.exp(
-                            self.A.likelihood(j,i) + self.D.likelihood(i,di)
-                        )
-            log.info('running sample %s'%count)
+            self.set_transition_likelihood()
+            
             # slice
             start = time.time()
             if sample_U:
                 U = []
                 for Z in Z_samples:
-                    U.append(self.slice_sample(Z))
+                    U.append(self.slice_sample(Z,min_u))
             
             log.debug('slice sample took %ss'%(time.time() - start))
+            
             # states
             start = time.time()
             alphas = []
@@ -455,7 +472,7 @@ class EDHMM:
             self.O.update(Z_samples, Y)
             self.A.update(Z_samples)
             # loglikelihood
-            l = self.loglikelihood(Z_samples,Y)
+            l = self.loglikelihood(Z_samples, Y)
             L.append(l)
             log.info("log likelihood at iteration %s: %s"%(count,l))
             if count > burnin:
@@ -469,7 +486,7 @@ class EDHMM:
                 Zs.append(Z_samples)
                 
                 if name:
-                    if not count % 10:
+                    if not count % 50:
                         log.debug('writing samples to disk')
                         # continually overwrite so we can quit at any time
                         # this will slow things down a LOT
@@ -492,39 +509,3 @@ class EDHMM:
         L = np.array(L).squeeze()
             
         return As, O_means, O_precisions, D_mus, Zs, L
-        
-if __name__ == "__main__":
-    
-    T = 400
-
-    import sys
-    import logging
-    import pylab as pb
-    import pprint
-
-    pp = pprint.PrettyPrinter(indent=4)
-    logging.basicConfig(
-        stream=sys.stdout,
-        #filename="EDHMM.log", 
-        #filemode="w",
-        level=logging.DEBUG
-    )
-
-    A = Transition(
-        K=3,
-        A=pb.array([[0, 0.3, 0.7], [0.6, 0, 0.4], [0.3, 0.7, 0]])
-    )
-    O = Gaussian(
-        nu = 1, 
-        Lambda = np.array([1]), 
-        mu_0 = [-10, 0, 10], 
-        kappa = 1, 
-        mu = [-10, 0, 10], 
-        tau = [np.array([[1]]),np.array([[1]]),np.array([[1]])]
-    )
-    D = Poisson(mu = [3,5,10], alpha=[3,3,3], beta=[4,4,4])
-    pi = Initial(K=3,beta=0.001)
-    m = EDHMM(A,O,D,pi)
-    X,Y,Dseq = m.sim(T)
-    m.beam(Y)
-    
