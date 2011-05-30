@@ -103,9 +103,7 @@ class Gaussian:
                 Lambda_n = self.Lambda
             if np.isnan(nu_n):
                 nu_n - self.nu
-            
-            assert not any(np.isnan(Lambda_n))
-            
+                        
             try:
                 sigma = invwishart(nu_n, np.linalg.inv(Lambda_n))
             except np.linalg.LinAlgError:
