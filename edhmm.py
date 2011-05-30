@@ -184,31 +184,30 @@ class EDHMM:
         # t-1
         for i,di in old_worthy:                    
             # which transitions are worthy?
-            for j in self.states:
-                for dj in range(1, self.right[i]+1):
-                    # if the probability is worthy..
-                    l = self.l[(i,j,di,dj)]
-                    #try:
-                    #    l = self.l[(i,j,di,dj)]
-                    #except KeyError:
-                        # sometimes if the duration shrinks we don't have the
-                        # likelihood for longer durations. So we need to
-                        # them here!
-                    #    if di == 1:
-                    #        l = np.exp(self.A.likelihood(i,j) + self.D.likelihood(j,dj))
-                    #    else:
-                    #        if i==j and dj==di-1:
-                    #            l = 1
-                    #        else:
-                    #            l = 0
+            if di == 1:
+                for j in self.states:
+                    for dj in range(1, self.right[i]+1):
+                        # if the probability is worthy..
+                        if self.l[(i,j,di,dj)] > u:
+                            # add it to the list!
+                            try:
+                                worthy[(j,dj)].append((i,di))
+                            except KeyError:
+                                # (or start a new list)
+                                worthy[(j,dj)] = [(i,di)]
+            else:    
+                j=i
+                dj = di-1
+                try:
+                    worthy[(j,dj)].append((i,di))
+                except KeyError:
+                    worthy[(j,dj)] = [(i,di)]
                     
-                    if l > u:
-                        # add it to the list!
-                        try:
-                            worthy[(j,dj)].append((i,di))
-                        except KeyError:
-                            # (or start a new list)
-                            worthy[(j,dj)] = [(i,di)]
+                    
+                    
+                    
+                        
+                            
                     
         
         assert worthy, (u, old_worthy)
