@@ -79,7 +79,8 @@ if True:
 pb.figure()
 pb.plot(L)
 pb.plot([L_prior for l in L],'r')
+pb.savefig("L.pdf")
 pb.figure()
 for i in range(3):
     pb.hist(D_mus[:,i], alpha=0.5)
-pb.show()
+pb.savefig("D_mus.pdf")
