@@ -25,7 +25,7 @@ O = Gaussian(
     Lambda = np.array([1]), 
     mu_0 = [0, 0, 0], 
     kappa = 0.01, 
-    mu = [-4, 0, 4], 
+    mu = [-3, 0, 3], 
     tau = [
         np.array([[1]]),
         np.array([[1]]),
@@ -34,7 +34,7 @@ O = Gaussian(
 )
 
 D = Poisson(
-    mu = [5,15,30], 
+    mu = [5,15,20], 
     alpha=[1, 1, 1],
     beta=[0.0001, 0.0001, 0.0001],
     support_step = 20
@@ -66,7 +66,8 @@ if True:
     m.D.mu = [1,1,1]
     
     As, O_means, O_precisions, D_mus, Zs, L = m.beam(
-        [Y], min_u = 0, its=1000, burnin=500, name="test", online=True, sample_U=True
+        [Y], min_u = 0, its=1000, burnin=500, name="test", online=True, 
+        sample_U=True
     )
     np.save("As",As)
     np.save("O_m", O_means)
@@ -78,7 +79,7 @@ if True:
 
 pb.figure()
 pb.plot(L)
-pb.plot([L_prior for l in L],'r')
+#pb.plot([L_prior for l in L],'r')
 pb.savefig("L.pdf")
 pb.figure()
 for i in range(3):

@@ -395,7 +395,7 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self, Y, min_u=0, its=100, burnin=50, name=None, online=False, sample_U=True):
+    def beam(self, Y, min_u=0, its=100, burnin=50, name=None, online=True, sample_U=True):
         
         bored = False
         
