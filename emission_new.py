@@ -98,13 +98,23 @@ class Gaussian:
                     (ybar - self.mu_0[i])*(ybar-self.mu_0[i]).T
                 )
             )
+            
+            if any(np.isnan(Lambda_n)):
+                Lambda_n = self.Lambda
+            if any(np.isnan(nu_n)):
+                nu_n - self.nu
+            
+            assert not any(np.isnan(Lambda_n))
+            
             try:
                 sigma = invwishart(nu_n, np.linalg.inv(Lambda_n))
             except np.linalg.LinAlgError:
                 try:
                     sigma = invwishart(nu_n, 1.0/Lambda_n)
                 except:
-                    print Lambda_n
+                    print "Lambda_n: %s"%Lambda_n
+                    print "S: %s"%S
+                    print "nu_n: %s"%nu_n
                     raise
             except:
                 print Lambda_n
