@@ -485,7 +485,7 @@ class EDHMM:
                 Zs.append(Z_samples)
                 
                 if name:
-                    if not count % 50:
+                    if not count % 100:
                         log.debug('writing samples to disk')
                         # continually overwrite so we can quit at any time
                         # this will slow things down a LOT
@@ -493,7 +493,7 @@ class EDHMM:
                         np.save("%s_O_m_%s"%(name,count), O_means)
                         np.save("%s_O_p_%s"%(name,count), O_precisions)
                         np.save("%s_D_mus_%s"%(name,count), D_mus)
-                        #np.save("%s_Zs"%name, np.array(Zs))
+                        np.save("%s_Zs_%s"%(name,count), np.array(Zs).squeeze())
                         np.save("%s_L_%s"%(name,count), L)
             # stop
             if count > its:
