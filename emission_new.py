@@ -99,7 +99,7 @@ class Gaussian:
                 )
             )
             
-            if any(np.isnan(Lambda_n)):
+            if (np.isnan(Lambda_n)).any():
                 Lambda_n = self.Lambda
             if np.isnan(nu_n):
                 nu_n - self.nu
