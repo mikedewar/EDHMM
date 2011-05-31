@@ -482,12 +482,13 @@ class EDHMM:
                         
             if count > burnin:
                 if count % 5 == 0:
+                    log.debug('writing iteration %s to disk'%count)
                     # start writing to disk                
                     np.save(A_fh, self.A.A)
                     np.save(O_m_fh, self.O.mu)
                     np.save(O_p_fh, self.O.tau)
                     np.save(D_m_fh, self.D.mu)
-                    cPickle.dump(Z_fh, Z_samples)
+                    cPickle.dump(Z_samples, Z_fh)
                     np.save(L_fh, l)
                         
             # stop
