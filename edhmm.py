@@ -309,6 +309,9 @@ class EDHMM:
                 print "alpha[%s]:%s"%(t-1,alphahat[t-1])
                 print worthy
                 raise
+            if hasattr(self,'W_fh'):
+                num_transitions = sum([len(worthy[key]) for key in worthy])
+                cPickle.dump(num_transitions, self.W_fh)
             alpha_time += time.time() - start
                 
 
@@ -433,6 +436,7 @@ class EDHMM:
         D_m_fh = open('D_m_%s.dat'%name,'w')
         Z_fh = open('Z_%s.dat'%name,'w')
         L_fh = open('L_%s.dat'%name,'w')
+        self.W_fh = open('W_%s.dat'%name,'w')
         
         L = []
         
@@ -484,12 +488,12 @@ class EDHMM:
                 if count % 5 == 0:
                     log.debug('writing iteration %s to disk'%count)
                     # start writing to disk                
-                    np.save(A_fh, self.A.A)
-                    np.save(O_m_fh, self.O.mu)
-                    np.save(O_p_fh, self.O.tau)
-                    np.save(D_m_fh, self.D.mu)
+                    cPickle.dump(self.A.A, A_fh )
+                    cPickle.dump(self.O.mu, O_m_fh )
+                    cPickle.dump(self.O.tau, O_p_fh )
+                    cPickle.dump(self.D.mu, D_m_fh )
                     cPickle.dump(Z_samples, Z_fh)
-                    np.save(L_fh, l)
+                    cPickle.dump(l, L_fh)
                         
             # stop
             if count > its:
