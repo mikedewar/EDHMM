@@ -404,7 +404,7 @@ class EDHMM:
         self.set_transition_likelihood()
         
         # sample auxillary variables from some small value
-        U = [[np.random.uniform(min_u, 0.000000001) for y in Yi] for Yi in Y]
+        U = [[np.random.uniform(min_u, 0.000000000001) for y in Yi] for Yi in Y]
         
         # get worthy samples given the relaxed U 
         alphas = []
@@ -462,12 +462,13 @@ class EDHMM:
                     Z_samples.append(self.beam_backward_sample(alphas[i],U[i]))
                 log.debug('inference took %ss'%(time.time() - start))
             else:
-                for i, Yi in enumerate(Y):
-                    W = self.worthy_transitions(U[i])
+                raise NotImplementedError
+                #for i, Yi in enumerate(Y):
+                #    W = self.worthy_transitions(U[i])
                     # get an initial state sequence
-                    alphas.append(self.beam_forward(Yi, U[i], W=W))
-                    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
-                log.debug('inference took %ss'%(time.time() - start))
+                #    alphas.append(self.beam_forward(Yi, U[i], W=W))
+                #    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
+                #log.debug('inference took %ss'%(time.time() - start))
             # parameters
             if update_D:
                 self.D.update(Z_samples)
@@ -485,7 +486,7 @@ class EDHMM:
                     np.save(O_m_fh, self.O.mu)
                     np.save(O_p_fh, self.O.tau)
                     np.save(D_m_fh, self.D.mu)
-                    np.save(Z_fh, Z_samples)
+                    np.save(Z_fh, np.array(Z_samples).squeeze())
                     np.save(L_fh, l)
                         
             # stop
