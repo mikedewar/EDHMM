@@ -395,7 +395,7 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self, Y, min_u=0, its=100, burnin=50, name=None, online=True, sample_U=True):
+    def beam(self, Y, min_u=0, its=100, burnin=50, name='beamer', online=True, sample_U=True, update_D=True):
         
         bored = False
         
@@ -426,11 +426,13 @@ class EDHMM:
         # count how many iterations we've done so far
         count = 0
         # storage for reporting
-        As = []
-        O_means = []
-        O_precisions = []
-        D_mus = []
-        Zs = []
+        A_fh = open('A_%s.dat'%name,'w')
+        O_m_fh = open('O_m_%s.dat'%name,'w')
+        O_p_fh = open('O_p_%s.dat'%name,'w')
+        D_m_fh = open('D_m_%s.dat'%name,'w')
+        Z_fh = open('Z_%s.dat'%name,'w')
+        L_fh = open('L_%s.dat'%name,'w')
+        
         L = []
         
         # block gibbs
@@ -467,44 +469,28 @@ class EDHMM:
                     Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
                 log.debug('inference took %ss'%(time.time() - start))
             # parameters
-            self.D.update(Z_samples)
+            if update_D:
+                self.D.update(Z_samples)
             self.O.update(Z_samples, Y)
             self.A.update(Z_samples)
             # loglikelihood
             l = self.loglikelihood(Z_samples, Y)
             L.append(l)
             log.info("log likelihood at iteration %s: %s"%(count,l))
+                        
             if count > burnin:
-                As.append(self.A.A)
-                O_means.append(self.O.mu)
-                log.debug("O means: %s"%O_means[-1])
-                O_precisions.append(self.O.tau)
-                log.debug("O precisions: %s"%O_precisions[-1])
-                D_mus.append(self.D.mu)
-                log.debug("D rates: %s"%D_mus[-1])
-                Zs.append(Z_samples)
-                
-                if name:
-                    if not count % 100:
-                        log.debug('writing samples to disk')
-                        # continually overwrite so we can quit at any time
-                        # this will slow things down a LOT
-                        np.save("%s_As_%s"%(name,count), As)
-                        np.save("%s_O_m_%s"%(name,count), O_means)
-                        np.save("%s_O_p_%s"%(name,count), O_precisions)
-                        np.save("%s_D_mus_%s"%(name,count), D_mus)
-                        np.save("%s_Zs_%s"%(name,count), np.array(Zs).squeeze())
-                        np.save("%s_L_%s"%(name,count), L)
+                if count % 10 == 0:
+                    # start writing to disk                
+                    np.save(A_fh, self.A.A)
+                    np.save(O_m_fh, self.O.mu)
+                    np.save(O_p_fh, self.O.tau)
+                    np.save(D_m_fh, self.D.mu)
+                    np.save(Z_fh, Z_samples)
+                    np.save(L_fh, l)
+                        
             # stop
             if count > its:
                 bored = True
             count += 1
         
-        As = np.array(As).squeeze()
-        O_means = np.array(O_means).squeeze()
-        O_precisions = np.array(O_precisions).squeeze()
-        D_mus = np.array(D_mus).squeeze()
-        Zs = np.array(Zs).squeeze()
-        L = np.array(L).squeeze()
-            
-        return As, O_means, O_precisions, D_mus, Zs, L
+        return L
