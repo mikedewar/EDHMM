@@ -1,6 +1,7 @@
 import numpy as np
 import logging
 import time
+import cPickle
 
 import pprint
 
@@ -480,13 +481,13 @@ class EDHMM:
             log.info("log likelihood at iteration %s: %s"%(count,l))
                         
             if count > burnin:
-                if count % 10 == 0:
+                if count % 2 == 0:
                     # start writing to disk                
                     np.save(A_fh, self.A.A)
                     np.save(O_m_fh, self.O.mu)
                     np.save(O_p_fh, self.O.tau)
                     np.save(D_m_fh, self.D.mu)
-                    np.save(Z_fh, np.array(Z_samples).squeeze())
+                    cPickle.dump(Z_fh, Z_samples)
                     np.save(L_fh, l)
                         
             # stop
