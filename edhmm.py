@@ -481,7 +481,7 @@ class EDHMM:
             log.info("log likelihood at iteration %s: %s"%(count,l))
                         
             if count > burnin:
-                if count % 2 == 0:
+                if count % 5 == 0:
                     # start writing to disk                
                     np.save(A_fh, self.A.A)
                     np.save(O_m_fh, self.O.mu)
