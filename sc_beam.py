@@ -65,23 +65,13 @@ if True:
     m.O.mu = [-1,0,1]
     m.D.mu = [1,1,1]
     
-    As, O_means, O_precisions, D_mus, Zs, L = m.beam(
-        [Y], min_u = 0, its=1000, burnin=500, name="test", online=True, 
+    L = m.beam(
+        [Y], min_u = 0, its=11, burnin=1, name="test", online=True, 
         sample_U=True
     )
-    np.save("As",As)
-    np.save("O_m", O_means)
-    np.save("O_p", O_precisions)
-    np.save("D_mus", D_mus)
-    np.save("Zs", Zs)
-    np.save("L", L)
 
 
 pb.figure()
 pb.plot(L)
-#pb.plot([L_prior for l in L],'r')
 pb.savefig("L.pdf")
-pb.figure()
-for i in range(3):
-    pb.hist(D_mus[:,i], alpha=0.5)
-pb.savefig("D_mus.pdf")
+
