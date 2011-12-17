@@ -1,209 +1,175 @@
 import pymc
-from utils import types
-import pylab as pb
 import numpy as np
 import logging
-log = logging.getLogger('emission')
+
+log = logging.getLogger('emissions') 
 
 
-class Emission():
-    """
-    Class describing an arbitrary output distribution. You should overload 
-    self.likelihood and self.sample to make a new distribution.
-    """
-    
-    def likelihood(self, state, Y):
-        """
-        returns the log likelihood of the data Y under the model
-        
-        Parameters
-        ----------
-        state: int
-            state of the EDHMM
-        Y: float, list or array
-            observation 
-        """
-        self.M.dist[state].value = Y
-        return self.M.dist[state].logp
-    
-    def sample(self, state):
-        """
-        returns a sampled output from the emission distribution
-        
-        Parameters
-        ----------
-        state: int
-            state of the EDHMM
-        """
-        self.M.dist[state].observed = False
-        return self.dist[state].random()
-    
-    def update(self, sample):
-        raise NotImplementedError
-        
-    def compare(self, other):
-        raise NotImplementedError
-    
-    def report(self):
-        raise NotImplementedError
-    
-    def __call__(self, state, Y=None):
-        if Y is None:
-            return self.sample(state, duration)
-        else:
-            return self.likelihood(state, Y)
-    
-    def __len__(self):
-        return len(self.M.dist)
+log_2_pi = np.log(2*np.pi)
+invwishart = lambda nu, L: pymc.InverseWishart("invwishart", nu, L).random()
+mvnormal = lambda mu, tau: pymc.MvNormal('mvnormal', mu, tau).random()
+#invwishart_like = lambda x, nu, L: pymc.inverse_wishart_like(x,nu,L)
 
-class Gaussian(Emission):
+class Gaussian:
     
-    def __init__(self, mu, alpha, beta, prior_mean, prior_precision, observations=None):
+    def __init__(self, nu, Lambda, mu_0, kappa, mu, tau):
+        self.nu = nu
+        self.Lambda = Lambda
+        self.mu_0 = mu_0 # mu_0 is the mean of the prior on the mean
+        self.kappa = float(kappa)
         
-        assert len(mu) == len(alpha)
-        assert len(mu) == len(beta)
-        assert len(mu) == len(prior_mean)
-        assert len(mu) == len(prior_precision)
+        self.mu = mu # mu is the current value of the mean for each state
+        self.tau = tau # tau is the current precision matrix for each state
+                
+        self.states = range(len(mu))
+        self.K = len(self.states)
         
-        states = range(len(mu))
         
+    def likelihood(self, state, obs):
+        assert state in self.states, (state, self.states)
+        return pymc.mv_normal_like(obs, self.mu[state], self.tau[state])
+    
+    def sample_obs(self,state):
+        assert state in self.states, (state, self.states)
+        return mvnormal(self.mu[state], self.tau[state])
+    
+    def sample_mean_prec(self, Zs, Ys):
+        
+        n = dict([(i,[]) for i in self.states])
+        
+        for Z,Y in zip(Zs,Ys):
+            X = [z[0] for z in Z]
+            for t,s in enumerate(X):
+                n[s].append(np.array([Y[t]]))
+        
+        for i in self.states:
+            n[i] = np.array(n[i]).T
+            n[i] = np.squeeze(n[i])
+        
+        #print n[i]
+        #for i in self.states:
+            #log.debug("state: %s"%i)
+            #log.debug("observations: %s"%n[i].round(2))
+        
+        taus, mus = [], []
+        for i in self.states:
+            
+            if len(n[i]) > 0:
+                try:
+                    ybar = np.mean(n[i],1)
+                except ValueError:
+                    ybar = np.mean(n[i])
+                
+                ybar = ybar.flatten()
+                
+                S = np.sum([
+                    np.outer((yi - ybar),(yi - ybar)) 
+                    for yi in n[i].T
+                ], 0)
+            else:
+                #wtf? we don't have any of these observations...
+                # fall back on the prior mean and we won't updated
+                # the precision
+                ybar = np.array(self.mu_0[i])        
+                S = 0
+                
+                
+            #assert not np.isnan(S), S
+            #assert not np.isinf(S), S
+            
+            #log.debug("ybar[%s]: %s"%(i,ybar))
+            mu_n = (
+                (
+                    (self.kappa/(self.kappa + len(n[i]))) * self.mu_0[i]
+                ) + 
+                (
+                    (len(n[i])/(self.kappa + len(n[i]))) * ybar
+                )
+            )
+            #log.debug("mu_n[%s]: %s"%(i,mu_n))
+            kappa_n = self.kappa + len(n[i])
+            nu_n = self.nu + len(n[i])
+            Lambda_n = (
+                self.Lambda + 
+                S + 
+                (
+                    (self.kappa * len(n[i]))/(self.kappa + len(n[i])) *
+                    (ybar - self.mu_0[i])*(ybar-self.mu_0[i]).T
+                )
+            )
+            
+            if (np.isnan(Lambda_n)).any():
+                Lambda_n = self.Lambda
+            if np.isnan(nu_n):
+                nu_n - self.nu
+                        
+            try:
+                sigma = invwishart(nu_n, np.linalg.inv(Lambda_n))
+            except np.linalg.LinAlgError:
+                try:
+                    sigma = invwishart(nu_n, 1.0/Lambda_n)
+                except:
+                    print "Lambda_n: %s"%Lambda_n
+                    print "S: %s"%S
+                    print "nu_n: %s"%nu_n
+                    raise
+            except:
+                print Lambda_n
+                raise
+            # form precion matrix
+            tau = np.linalg.inv(sigma)
+            #log.debug("tau[%s]: %s"%(i,tau))
+            try:
+                tau_scaled = np.linalg.inv(sigma/kappa_n)
+            except np.linalg.LingAlgError:
+                tau_scaled = 1.0 / (sigma/kappa_n)
+            #log.debug("tau_scaled[%s]: %s"%(i,tau_scaled))
+            try:
+                mu = mvnormal(mu_n, tau_scaled)
+            except ValueError:
+                mu = self.mu_0[i]
+                log.debug('fell back onto the prior mu_0 probably due to lack of observations in this state')
+            taus.append(tau)
+            mus.append(mu)
+            log.debug('sampled obs mean for state %s: %s'%(i,mus[-1]))
+            log.debug('sampled obs prec for state %s: %s'%(i,taus[-1]))
+            
+        return mus, taus
+    
+    def update(self, Z, Y):
+        mu, tau = self.sample_mean_prec(Z, Y)
         self.mu = mu
-        self.alpha = alpha
-        self.beta = beta
-        self.prior_mean = prior_mean
-        self.prior_precision = prior_precision
-        
-        mean = [
-            pymc.Normal('mean_%s'%i, mu[i], 0.1)
-            for i in states
-        ]
-        precision = [
-            pymc.Gamma('prec_%s'%i, alpha[i], beta[i])
-            for i in states
-        ]
-        if observations:
-            dist = [
-                pymc.Normal(
-                    'emission_%s'%j, 
-                    mean[j], 
-                    precision[j],
-                    values=observations[j],
-                    observed = True
-                ) 
-                for j in states
-            ]
-        else:
-            dist = [
-                pymc.Normal('emission_%s'%j, mean[j], precision[j]) 
-                for j in states
-            ]
-        self.dim = 1
-        self.M = pymc.MCMC(pymc.Model(
-            {
-                'dist': dist, 
-                'precision': precision,
-                'mean' : mean
-            }
-        ))
+        self.tau = tau
     
-    def update_parameters(self, prior_mean, prior_precision):
-        return Gaussian(
-            mu=self.mu,
-            alpha=self.alpha,
-            beta=self.beta,
-            prior_mean = prior_mean,
-            prior_precision = prior_precision
-        )
-    
-    def update_observations(self,Z,Y):
-        X = [z[0] for z in Z]
-        states = pb.unique(X)
-        states.sort()
-        n = dict([(i,[]) for i in states])
-        for t,s in enumerate(X):
-            n[s].append(np.array([Y[t]]))
-        
-        return Gaussian(
-            mu=self.mu,
-            alpha=self.alpha,
-            beta=self.beta,
-            prior_mean = self.prior_mean,
-            prior_precision = self.prior_precision,
-            observations = n
-        )
-        
-    def update(self,Z,Y):
-        log.info('updating O')
-        O = self.update_observations(Z,Y)
-        mean, precision = O.sample_parents()
-        O = O.update_parameters(mean, precision)
-        return O, mean, precision
-    
-    def report(self):
-        pass
-    
-    def plot(self,x):
-        y = pb.zeros(len(x))
-        for i, xi in enumerate(x):
-            for k in range(len(self.dist)):
-                y[i] += self.likelihood(k, xi)
-        pb.plot(x,y)
-        pb.show()
-    
-    def sample_parents(self):
-        self.M.sample(iter=101,burn=100)
-        states = range(len(self.M.mean))
-        means = np.array(
-            [self.M.trace('mean_%s'%i)[:] for i in states]
-        ).flatten()
-        precisions = np.array(
-            [self.M.trace('prec_%s'%i)[:] for i in states]
-        )
-        return means, precisions
-    
-    def sample_from_prior(self,state):
-        self.M.mean[state].observed = False
-        self.M.mean[state].value = self.prior_mean[state]
-        self.M.precision[state].observed = False
-        self.M.precision[state].value = self.prior_precision[state]
-        return self.M.dist[state].random()
 
-class MultivariateGaussian(Emission):
-    
-    @types(means=list, covariances=list)
-    def __init__(self, means, covariances):
-        self.dist = [
-            pymc.MvNormalCov('emission_%s'%j, mean, covariance)
-            for j, (mean,covariance) in enumerate(zip(means,covariances))
-        ]
-        self.dim = 2
-        Emission.__init__(self)
-
-if __name__ == "__main__":
-    O = Gaussian(
-        mu=[-10,0,10],
-        alpha=[1,1,1],
-        beta=[1,1,1],
-        prior_mean = [-10,0,10],
-        prior_precision = [1,1,1]
-    )
-    
+if __name__ == "__main__":    
+    import pylab as pb
     Z = np.load('Z.npy')
     Y = np.load('Y.npy')
-    
-    O.update(Z,Y)
-    
-    print O.M.dist[0].value
-    
-    print O.likelihood(Z[0][0],Y[0])
-    
-    pb.hist(
-        [
-            O.sample_from_prior(j) 
-            for i in range(1000) 
-            for j in range(3)
-        ],
-        bins=100
+    O = Gaussian(
+        nu = 1,
+        Lambda = np.array([1]), 
+        mu_0 = [0, 0, 0], 
+        kappa = 0.01, 
+        mu = [-3, 0, 3], 
+        tau = [
+            np.array([[1]]),
+            np.array([[1]]),
+            np.array([[1]])
+        ]
     )
+    #x = np.linspace(-4,4,100)
+    #for i in range(3):
+    #    pb.plot(x,[pb.exp(O.likelihood(i,xi)) for xi in x])
+    #pb.show()
+    #mus, sigmas = O.sample_mean_prec(Z,Y)
+    pb.figure()
+    for j in range(3):
+        mus = np.array([O.sample_mean_prec([Z],[Y])[0][j] for i in range(100)]).flatten()
+        pb.hist(mus,alpha=0.5)
+        
+    pb.figure()
+    for j in range(3):
+        taus = np.array([O.sample_mean_prec([Z],[Y])[1][j] for i in range(100)]).flatten()
+        pb.hist(taus,alpha=0.5)
     pb.show()
-    
