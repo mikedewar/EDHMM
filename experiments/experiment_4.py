@@ -69,7 +69,7 @@ for md in range(5,30):
     max_d = [md for i in range(3)]
 
     L = m.beam(
-        [Y], its=3000, burnin=500, name = "exp4", online=True, 
+        [Y], its=1000, burnin=500, name = "exp4_%s"%md, online=True, 
         force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
     )
     np.save("exp4_L_%s"%md, L)
