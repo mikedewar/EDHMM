@@ -172,8 +172,12 @@ class EDHMM:
                             self.l[(i,j,di,dj)] = 0
                         
     
-    def set_duration_support(self):
-        self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+    def set_duration_support(self, min_d, max_d):
+        if (max_d == None) and (min_d == None):
+            self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+        else:
+            self.right = max_d
+            self.left = min_d
         
     def slice_sample(self,Z, min_u=0):
         log.info('forming slice')
@@ -411,9 +415,8 @@ class EDHMM:
         Z.reverse()
         return Z
                 
-    def beam(self, 
-        Y, min_u=0, its=100, burnin=50, name='beamer', online=True, sample_U=True, update_D=True, force_U = None
-        ):
+    def beam(self, Y, min_u=0, its=100, burnin=50, name='beamer', online=True, sample_U=True, update_D=True, 
+        force_U = None, min_d = None, max_d = None ):
         """
         Runs the beam sampling approach for the EDHMM
         
@@ -445,11 +448,16 @@ class EDHMM:
             you can force U to start off from a specific starting place if you like. If 
             you set this and set sample_U to False then this auxilliary variable won't 
             change throughout the algo.
+        min_d : None or list of ints
+            You can force a minimum duration per state, if you'd like. You must also set 
+            max_d if you set min_d.
+        max_d : None or list of ints
+            maximum duration per state
         """
         bored = False
         
         # get support of duration distributions
-        self.set_duration_support()
+        self.set_duration_support(min_d, max_d)
         self.set_transition_likelihood()
         
         # sample auxillary variables from some small value
@@ -485,7 +493,7 @@ class EDHMM:
             log.info('running sample %s'%count)
             
             log.debug('getting support')
-            self.left,self.right = zip(*[self.D.support(i) for i in self.states])
+            self.set_duration_support(min_d, max_d)
             self.set_transition_likelihood()
             
             # slice
