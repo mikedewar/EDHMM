@@ -24,7 +24,6 @@ class Categorical:
         self.p = p/p.sum()
         assert self.p.sum().round(5) == 1, (p, self.p,  self.p.sum())
         self.p = np.squeeze(self.p)
-        #print self.p
     
     def sample(self):
         if self.p.shape == ():
@@ -115,6 +114,17 @@ class EDHMM:
         return X, Y, D
     
     def loglikelihood(self,Zs,Ys):
+        """
+        Calculates the log likelihood of the model given state
+        and observation sequences
+        
+        Parameters
+        ----------
+        Zs : list
+            list of state sequences
+        Ys : list
+            list of observation sequences
+        """
         l = 0
         for Z,Y in zip(Zs,Ys):
             for t in range(1,len(Z)):
@@ -134,13 +144,14 @@ class EDHMM:
         return l
     
     def set_transition_likelihood(self):
-        
+        """
+        builds a dictionary of possible transitions and their likelihoods
+        """
         
         if hasattr(self,'l'):
             old_l = self.l
             old_durations = np.array([k[2:] for k in old_l]).flatten()
             right = max(old_durations.max(), max(self.right))
-                
         else:
             right = max(self.right)
         
@@ -174,12 +185,19 @@ class EDHMM:
             di = Z[t-1][1]
             dj = Z[t][1]
             try:
-                u.append(np.random.uniform(low=min_u, high=self.l[(i,j,di,dj)]))
+                u.append(
+                    np.random.uniform(
+                        low=min_u, 
+                        high=self.l[(i,j,di,dj)])
+                    )
             except KeyError:
                 raise
         return np.array(u)
         
     def get_worthy(self,u,old_worthy):
+        """
+        decides which transitions are valid given the auxilliary variable
+        """
         worthy = {}
         # we only consider those transitions that are possible from 
         # t-1
@@ -203,18 +221,14 @@ class EDHMM:
                     worthy[(j,dj)].append((i,di))
                 except KeyError:
                     worthy[(j,dj)] = [(i,di)]
-                    
-                    
-                    
-                    
-                        
-                            
-                    
         
         assert worthy, (u, old_worthy)
         return worthy
     
     def get_initial_worthy(self,u):
+        """
+        gets the intial set of worthy states
+        """
         worthy = {}
         for i in self.states:
             for di in range(self.left[i],self.right[i]+1):
@@ -227,7 +241,10 @@ class EDHMM:
                                 worthy[(j,dj)] = [(i,di)]
         return worthy
             
-    def beam_forward(self, Y, U, W=None):        
+    def beam_forward(self, Y, U, W=None):   
+        """
+        runs the forwrd algorithm, sampling only from valid transitions
+        """     
         
         log.info('running forward algorithm')
         
@@ -246,8 +263,6 @@ class EDHMM:
         alpha_time = 0
 
         for t,y in enumerate(Y):
-            
-            #log.debug('getting worthy for t: %s using auxiliary variable %s'%(t,U[t]))
             start = time.time() 
             if W is None:
                 if t == 0:
@@ -257,11 +272,7 @@ class EDHMM:
             else:
                 worthy = W[t]
             worthy_time += time.time() - start
-            
-            #pp.pprint(worthy)
-            
-            #log.debug('calculating alpha[t]: %s'%t)
-            
+                        
             start = time.time() 
             if t == 0:
                 for i in self.states:
@@ -320,6 +331,9 @@ class EDHMM:
         return alphahat
     
     def beam_backward_sample(self, alphahat, U, W=None):
+        """
+        perfomrs the backwards sweep given the forwards sweep and the auxilliary variables
+        """
         
         log.info('backward sampling state sequence')
         
@@ -392,15 +406,46 @@ class EDHMM:
                     a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
                 except KeyError:
                     a[j[0]][j[1]] = -10000000
-            
             z = sample_z(a)
-            
             Z.append(z)
         Z.reverse()
         return Z
                 
-    def beam(self, Y, min_u=0, its=100, burnin=50, name='beamer', online=True, sample_U=True, update_D=True):
+    def beam(self, 
+        Y, min_u=0, its=100, burnin=50, name='beamer', online=True, sample_U=True, update_D=True, force_U = None
+        ):
+        """
+        Runs the beam sampling approach for the EDHMM
         
+        Parameters
+        ----------
+        Y : list
+            list of observation sequences
+            
+        Optional Parameters
+        -------------------
+        min_u : scalar (0)
+            the minimum auxilliary variable to consider. You can use this to tune
+            the algorithm. See the paper for details.
+        its : integer (100)
+            number of iterations to perform
+        burning : integer (50)
+            allow this many iterations before writing samples to disk
+        name : string (beamer)
+            name of the experiment. This will be prepended to all output files
+        online : boolean (True)
+            whether or not to run the algo online. Currently this has to be True
+        sample_U : boolean (True)
+            whether or not to update the auxilliary variable. You probably should leave
+            this to True, unless you're poking at the algorithm to see what it does
+        updated_D : boolean (True)
+            whether or not to update the duration distribution. Again, you should leave
+            this to True.
+        force_U : None or list of lists (None)
+            you can force U to start off from a specific starting place if you like. If 
+            you set this and set sample_U to False then this auxilliary variable won't 
+            change throughout the algo.
+        """
         bored = False
         
         # get support of duration distributions
@@ -421,11 +466,6 @@ class EDHMM:
                 Z_samples.append(self.beam_backward_sample(alphas[i],U[i]))
         else:
             raise NotImplementedError
-            #for i, Yi in enumerate(Y):
-            #    W = self.worthy_transitions(U[i])
-            #    # get an initial state sequence
-            #    alphas.append(self.beam_forward(Yi, U[i], W=W))
-            #    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
         
         # count how many iterations we've done so far
         count = 0
@@ -470,7 +510,7 @@ class EDHMM:
                 raise NotImplementedError
                 #for i, Yi in enumerate(Y):
                 #    W = self.worthy_transitions(U[i])
-                    # get an initial state sequence
+                #    get an initial state sequence
                 #    alphas.append(self.beam_forward(Yi, U[i], W=W))
                 #    Z_samples.append(self.beam_backward_sample(alphas[i],U[i],W))
                 #log.debug('inference took %ss'%(time.time() - start))
@@ -494,7 +534,6 @@ class EDHMM:
                     cPickle.dump(self.D.mu, D_m_fh )
                     cPickle.dump(Z_samples, Z_fh)
                     cPickle.dump(l, L_fh)
-                        
             # stop
             if count > its:
                 bored = True
