@@ -1,5 +1,6 @@
-# this experiment sees to see if we can distinguish between two different 
-# states with the same emissions but different durations
+# this experiment runs the algorithm having set U to zero for all time
+# and manually picking minimum and maximum durations. This simulates the 
+# forward backward algo, and is liable to not be all that great / fast etc
 
 import sys
 sys.path.append('..')
@@ -17,8 +18,8 @@ import logging
 
 logging.basicConfig(
     stream=sys.stdout,
-    filename="experiment_3.log", 
-    filemode="w",
+    #filename="experiment_3.log", 
+    #filemode="w",
     level=logging.DEBUG
 )
 
@@ -31,7 +32,7 @@ O = Gaussian(
     Lambda = np.array([1]), 
     mu_0 = [0, 0, 0], 
     kappa = 0.01, 
-    mu = [0, 0, 3], 
+    mu = [-3, 0, 3], 
     tau = [
         np.array([[1]]),
         np.array([[1]]),
@@ -41,11 +42,11 @@ O = Gaussian(
 D = Poisson(
     mu = [5,15,20], 
     alpha=[1, 1, 1],
-    beta=[1e-5, 1e-5, 1e-5],
+    beta=[0.0001, 0.0001, 0.0001],
     support_step = 20
 )
-
 pi = Initial(K=3,beta=0.001)
+
 m = EDHMM(A,O,D,pi)
 
 T = 500
@@ -60,7 +61,14 @@ np.save("exp3_X.npy", X)
 np.save("exp3_D.npy", Dseq)
 np.save("exp3_Y.npy", Y)
 np.save("exp3_Z.npy", zip(X,Dseq))
+
+### OK so we force some variables here, not generally reccommended!
+U = [0 for i in Y]
+min_d = [1,1,1]
+max_d = [10,10,10]
+
+
 L = m.beam(
-    [Y], its=3000, burnin=500, name = "exp3", online=True
+    [Y], its=3000, burnin=500, name = "exp4", online=True, force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
 )
 np.save("exp3_L", L)
