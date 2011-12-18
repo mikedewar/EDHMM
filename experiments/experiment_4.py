@@ -18,8 +18,8 @@ import logging
 
 logging.basicConfig(
     stream=sys.stdout,
-    #filename="experiment_3.log", 
-    #filemode="w",
+    filename="experiment_3.log", 
+    filemode="w",
     level=logging.DEBUG
 )
 
