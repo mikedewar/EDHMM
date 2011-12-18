@@ -62,13 +62,14 @@ np.save("exp4_D.npy", Dseq)
 np.save("exp4_Y.npy", Y)
 np.save("exp4_Z.npy", zip(X,Dseq))
 
-### OK so we force some variables here, not generally reccommended!
-U = [0 for i in Y]
-min_d = [1,1,1]
-max_d = [10,10,10]
+for md in range(5,30):
+    ### OK so we force some variables here, not generally reccommended!
+    U = [0 for y in Y]
+    min_d = [1,1,1]
+    max_d = [md for i in range(3)]
 
-
-L = m.beam(
-    [Y], its=3000, burnin=500, name = "exp4", online=True, force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
-)
-np.save("exp4_L", L)
+    L = m.beam(
+        [Y], its=3000, burnin=500, name = "exp4", online=True, 
+        force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
+    )
+    np.save("exp4_L_%s"%md, L)
