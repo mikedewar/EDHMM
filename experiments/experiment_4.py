@@ -18,7 +18,7 @@ import logging
 
 logging.basicConfig(
     stream=sys.stdout,
-    filename="experiment_3.log", 
+    filename="experiment_4.log", 
     filemode="w",
     level=logging.DEBUG
 )
@@ -57,10 +57,10 @@ m.A.A = pb.array([[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]])
 m.O.mu = [0,0,0]
 m.D.mu = [1,1,1]
 
-np.save("exp3_X.npy", X)
-np.save("exp3_D.npy", Dseq)
-np.save("exp3_Y.npy", Y)
-np.save("exp3_Z.npy", zip(X,Dseq))
+np.save("exp4_X.npy", X)
+np.save("exp4_D.npy", Dseq)
+np.save("exp4_Y.npy", Y)
+np.save("exp4_Z.npy", zip(X,Dseq))
 
 ### OK so we force some variables here, not generally reccommended!
 U = [0 for i in Y]
@@ -71,4 +71,4 @@ max_d = [10,10,10]
 L = m.beam(
     [Y], its=3000, burnin=500, name = "exp4", online=True, force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
 )
-np.save("exp3_L", L)
+np.save("exp4_L", L)
