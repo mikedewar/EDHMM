@@ -1,6 +1,6 @@
 # this experiment runs the algorithm having set U to zero for all time
 # and manually picking minimum and maximum durations. This simulates the 
-# forward backward algo, and is liable to not be all that great / fast etc
+# forward backward algo, and will get a lot slower as d_max increases
 
 import sys
 sys.path.append('..')
