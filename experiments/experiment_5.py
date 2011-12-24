@@ -18,7 +18,7 @@ import logging
 
 logging.basicConfig(
     stream=sys.stdout,
-    filename="experiment_4.log", 
+    filename="experiment_5.log", 
     filemode="w",
     level=logging.DEBUG
 )
@@ -53,23 +53,27 @@ T = 500
 
 X,Y,Dseq = m.sim(T)
 
+
+
+
+
 m.A.A = pb.array([[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]])
 m.O.mu = [0,0,0]
 m.D.mu = [1,1,1]
 
-np.save("exp4_X.npy", X)
-np.save("exp4_D.npy", Dseq)
-np.save("exp4_Y.npy", Y)
-np.save("exp4_Z.npy", zip(X,Dseq))
+np.save("exp5_X.npy", X)
+np.save("exp5_D.npy", Dseq)
+np.save("exp5_Y.npy", Y)
+np.save("exp5_Z.npy", zip(X,Dseq))
 
-for md in range(29,35):
+for md in range(5,30):
     ### OK so we force some variables here, not generally reccommended!
     U = [0 for y in Y]
     min_d = [1,1,1]
     max_d = [md for i in range(3)]
 
     L = m.beam(
-        [Y], its=1000, burnin=500, name = "exp4_%s"%md, online=True, 
+        [Y], its=1000, burnin=500, name = "exp5_%s"%md, online=True, 
         force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
     )
-    np.save("exp4_L_%s"%md, L)
+    np.save("exp5_L_%s"%md, L)
