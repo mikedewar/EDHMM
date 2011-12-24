@@ -62,7 +62,7 @@ np.save("exp4_D.npy", Dseq)
 np.save("exp4_Y.npy", Y)
 np.save("exp4_Z.npy", zip(X,Dseq))
 
-for md in range(5,30):
+for md in range(29,35):
     ### OK so we force some variables here, not generally reccommended!
     U = [0 for y in Y]
     min_d = [1,1,1]
