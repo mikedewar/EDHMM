@@ -1,6 +1,4 @@
-# this experiment runs the algorithm having set U to zero for all time
-# and manually picking minimum and maximum durations. This simulates the 
-# forward backward algo, and will get a lot slower as d_max increases
+# This experiment runs the forward backward algorithm on experiment 1's data 
 
 import sys
 sys.path.append('..')
@@ -53,27 +51,26 @@ T = 500
 
 X,Y,Dseq = m.sim(T)
 
+max_durations = range(5,max(Dseq)+5)
 
+pb.figure(figsize=(8,2))
 
+for sample in range(5):
+    L = []
+    for max_d in max_durations:
+        alphahat = m.forward(Y, max_d)
+        Z = m.backward_sample(alphahat, max_d)
+        l = m.loglikelihood([Z],[Y])
+        L.append(l)
+    pb.plot(max_durations, L, color='blue', alpha=0.3)
+pb.xlabel('maximum durations considered')
+pb.ylabel('log likelihood')
 
+beam_likelihoods = np.load('experiment_4_data/exp4a_L.npy')[:10]
+for beam_likelihood in beam_likelihoods:
+    plt.plot(max_durations, [beam_likelihood for d in max_durations], color="red", alpha=0.3)
 
-m.A.A = pb.array([[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]])
-m.O.mu = [0,0,0]
-m.D.mu = [1,1,1]
+lTrue = m.loglikelihood([zip(X,Dseq)], [Y])
+pb.plot(max_durations, [lTrue for i in max_durations], color="green")
 
-np.save("exp5_X.npy", X)
-np.save("exp5_D.npy", Dseq)
-np.save("exp5_Y.npy", Y)
-np.save("exp5_Z.npy", zip(X,Dseq))
-
-for md in range(5,30):
-    ### OK so we force some variables here, not generally reccommended!
-    U = [0 for y in Y]
-    min_d = [1,1,1]
-    max_d = [md for i in range(3)]
-
-    L = m.beam(
-        [Y], its=1000, burnin=500, name = "exp5_%s"%md, online=True, 
-        force_U = [U], min_d = min_d, max_d = max_d, sample_U=False
-    )
-    np.save("exp5_L_%s"%md, L)
+pb.savefig('forward_backward_likleihoods.pdf')
