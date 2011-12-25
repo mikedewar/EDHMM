@@ -20,9 +20,6 @@ class Initial:
             "d_init":dur_dist
         })
     
-    def __getitem__(self,key):
-        return self.pi[key]
-    
     def __call__(self, z=None):
         if z is None:
             return self.sample()
