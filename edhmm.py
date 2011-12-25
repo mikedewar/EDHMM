@@ -1,3 +1,9 @@
+"""
+So this is the main file in this project. If you're reading this to get a sense of what's going on
+then you should start from the beam() method and work out from there. You'll find a lot of unecessary
+bits and bobs we've baked into the code in order to test out the algorithm. 
+"""
+
 import numpy as np
 import logging
 import time
@@ -333,7 +339,7 @@ class EDHMM:
         log.debug('time spent building alpha: %s'%alpha_time)
         log.debug('time spent finding worthy: %s'%worthy_time)
         return alphahat
-    
+
     def beam_backward_sample(self, alphahat, U, W=None):
         """
         perfomrs the backwards sweep given the forwards sweep and the auxilliary variables
@@ -461,7 +467,10 @@ class EDHMM:
         self.set_transition_likelihood()
         
         # sample auxillary variables from some small value
-        U = [[np.random.uniform(min_u, 0.000000000001) for y in Yi] for Yi in Y]
+        if force_U:
+            U = force_U
+        else:
+            U = [[np.random.uniform(min_u, 0.000000000001) for y in Yi] for Yi in Y]
         
         # get worthy samples given the relaxed U 
         alphas = []
@@ -490,7 +499,7 @@ class EDHMM:
         
         # block gibbs
         while not bored:
-            log.info('running sample %s'%count)
+            log.info('\n\nrunning sample %s'%count)
             
             log.debug('getting support')
             self.set_duration_support(min_d, max_d)
@@ -548,3 +557,128 @@ class EDHMM:
             count += 1
         
         return L
+        
+    def forward(self, Y, max_d, min_d=1):   
+        """
+        runs the forwrd algorithm, sampling only from valid transitions
+        """     
+        
+        log.info('running forward algorithm')
+        
+        # initialise alphahat
+        alphahat = [{} for y in Y]            
+        
+        log.debug('calculating observation likelihoods')
+        ol = np.zeros((self.K,len(Y)))
+        for i in self.states:
+            for t,y in enumerate(Y):
+                ol[i,t] = self.O.likelihood(i,y)
+            
+        log.debug('starting iteration')
+        
+        # build transition likelihoods
+        l = {}
+        for i in self.states:
+            for di in range(min_d, max_d):
+                for j in self.states:
+                    for dj in range(min_d, max_d):
+                        if di == 1:
+                            l[(i,j,di,dj)] = np.exp(
+                                self.A.likelihood(i,j) + self.D.likelihood(j,dj)
+                            )
+                        elif i == j and dj==di-1:
+                            l[(i,j,di,dj)] = 1
+                        else:
+                            l[(i,j,di,dj)] = 0
+        
+        
+        # alphahat[time][state][duration]
+        
+        for t,y in enumerate(Y):
+            start = time.time() 
+            if t == 0:
+                for i in self.states:
+                    alphahat[t][i] = {}
+                    for d in range(min_d, max_d):
+                        alphahat[t][i][d] = self.pi.likelihood((i,d))
+            else:
+                for i in self.states:
+                    for di in range(min_d, max_d):
+                        
+                        # initialise alpahat[t] if necessary
+                        if i not in alphahat[t]:
+                            alphahat[t][i] = {i:-1000000000000}
+                        if di not in alphahat[t][i]:
+                            alphahat[t][i][di] = -1000000000000
+                        
+                        for j in self.states:
+                            for dj in range(min_d, max_d):
+                                try:
+                                    alphahat[t][i][di] = elnsum(
+                                        alphahat[t][i][di], 
+                                        alphahat[t-1][j][dj]
+                                    )
+                                except KeyError:
+                                    print "i: %s, di: %s"%(i,di)
+                                    print alphahat[t]
+                                    raise
+                                alphahat[t][i][di] = elnsum(
+                                    alphahat[t][i][di], 
+                                    l[(i,j,di,dj)]
+                                )
+                                
+                        alphahat[t][i][di] += ol[i,t]
+                        assert not np.isinf(alphahat[t][i][di])
+
+        return alphahat
+    
+    def backward_sample(self, alphahat, max_d, min_d=1):
+        """
+        perfomrs the backwards sweep given the forwards sweep and the auxilliary variables
+        """
+        log.info('backward sampling state sequence')
+        
+        def sample_z(a):
+            vals = []
+            for i in a:
+                vals.extend(a[i].values())
+            try:
+                m = np.array(vals).max()
+            except ValueError:
+                print a
+                print vals
+                raise
+            p = [np.exp(np.array(a[i].values()) - m).sum() for i in a.keys()]
+            
+            xi = Categorical(np.array(p)).sample()
+            x = a.keys()[xi] 
+            try:
+                p = np.exp(np.array(a[x].values()) - max(a[x].values()))
+                di = Categorical(p).sample()
+            except AssertionError:
+                print p
+                raise
+            d = a[x].keys()[di]
+            return x,d
+        
+        T = len(alphahat)
+        try:
+            Z = [sample_z(alphahat[-1])]
+        except ValueError:
+            print alphahat[-1]
+            raise
+        for t in reversed(xrange(T-1)):
+            
+            a = dict([(i,{}) for i in self.states])
+            
+            for j in self.states:
+                for dj in range(min_d, max_d):
+                    try:
+                        a[j][dj] = alphahat[t][j][dj]
+                    except KeyError:
+                        print "uh oh"
+                        a[j][dj] = -10000000
+            z = sample_z(a)
+            Z.append(z)
+        Z.reverse()
+        return Z
