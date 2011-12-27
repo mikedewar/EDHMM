@@ -558,7 +558,7 @@ class EDHMM:
         
         return L
         
-    def forward(self, Y, max_d, min_d=1):   
+    def forward(self, Y):   
         """
         runs the forwrd algorithm, sampling only from valid transitions
         """     
@@ -576,20 +576,20 @@ class EDHMM:
             
         log.debug('starting iteration')
         
-        # build transition likelihoods
+        max_d, min_d = max(self.right), max(self.left)
+        
+        # build transition log likelihoods
         l = {}
         for i in self.states:
             for di in range(min_d, max_d):
                 for j in self.states:
                     for dj in range(min_d, max_d):
                         if di == 1:
-                            l[(i,j,di,dj)] = np.exp(
-                                self.A.likelihood(i,j) + self.D.likelihood(j,dj)
-                            )
+                            l[(i,j,di,dj)] = self.A.likelihood(i,j) + self.D.likelihood(j,dj)
                         elif i == j and dj==di-1:
-                            l[(i,j,di,dj)] = 1
-                        else:
                             l[(i,j,di,dj)] = 0
+                        else:
+                            l[(i,j,di,dj)] = -1000000000000
         
         
         # alphahat[time][state][duration]
@@ -604,7 +604,6 @@ class EDHMM:
             else:
                 for i in self.states:
                     for di in range(min_d, max_d):
-                        
                         # initialise alpahat[t] if necessary
                         if i not in alphahat[t]:
                             alphahat[t][i] = {i:-1000000000000}
@@ -613,17 +612,12 @@ class EDHMM:
                         
                         for j in self.states:
                             for dj in range(min_d, max_d):
-                                try:
-                                    alphahat[t][i][di] = elnsum(
-                                        alphahat[t][i][di], 
-                                        alphahat[t-1][j][dj]
-                                    )
-                                except KeyError:
-                                    print "i: %s, di: %s"%(i,di)
-                                    print alphahat[t]
-                                    raise
                                 alphahat[t][i][di] = elnsum(
                                     alphahat[t][i][di], 
+                                    alphahat[t-1][j][dj]
+                                )
+                                alphahat[t][i][di] = elnsum(
+                                    alphahat[t][i][di],
                                     l[(i,j,di,dj)]
                                 )
                                 
@@ -632,11 +626,14 @@ class EDHMM:
 
         return alphahat
     
-    def backward_sample(self, alphahat, max_d, min_d=1):
+    def backward_sample(self, alphahat):
         """
-        perfomrs the backwards sweep given the forwards sweep and the auxilliary variables
+        This is a quick edit to make the normal backward sampler
         """
+        
         log.info('backward sampling state sequence')
+        
+        U = [0 for a in alphahat]
         
         def sample_z(a):
             vals = []
@@ -668,16 +665,45 @@ class EDHMM:
             print alphahat[-1]
             raise
         for t in reversed(xrange(T-1)):
+            # pick the subset of alphahats
+            # here w[t+1][Z[-1]] is a list of the possible zs you can sample
+            # from in alphahat[t] given that the next state is Z[-1], i.e.
+            # w[t+1][Z[t+1]] is the next state
+            
+            
+            #a = dict([(i,{}) for i in self.states])        
+            #for j in worthy[Z[-1]]:
+            #    try:
+            #        a[j[0]][j[1]] = alphahat[t][j[0]][j[1]]
+            #    except KeyError:
+            #        a[j[0]][j[1]] = 0
+            
+            # we need to build up a pair of worthys
+            
+            # first, the get_worthy method uses old_worthy to make sure that 
+            # the transitions are consistent. So we need just the keys in
+            # alphahat as we know that this is 'old worthy' for the worthy
+            # variables at t+1
+            old_worthy = {}
+            for state in alphahat[t]:
+                for duration in alphahat[t][state]:
+                    key = (state, duration)
+                    old_worthy[key] = 0
+            
+            worthy = self.get_worthy(U[t+1],old_worthy)
             
             a = dict([(i,{}) for i in self.states])
+            try:
+                worthy[Z[-1]]
+            except KeyError:
+                print worthy
+                raise
             
-            for j in self.states:
-                for dj in range(min_d, max_d):
-                    try:
-                        a[j][dj] = alphahat[t][j][dj]
-                    except KeyError:
-                        print "uh oh"
-                        a[j][dj] = -10000000
+            for j in worthy[Z[-1]]:
+                try:
+                    a[j[0]][j[1]] = alphahat[t][j[0]][j[1]] + np.log(self.l[(j[0],Z[-1][0],j[1],Z[-1][1])])
+                except KeyError:
+                    a[j[0]][j[1]] = -10000000
             z = sample_z(a)
             Z.append(z)
         Z.reverse()

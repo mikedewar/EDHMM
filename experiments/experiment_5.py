@@ -50,17 +50,25 @@ m = EDHMM(A,O,D,pi)
 T = 500
 
 X,Y,Dseq = m.sim(T)
+U = [0 for y in Y]
 
 max_durations = range(5,max(Dseq)+5)
 
 pb.figure(figsize=(8,2))
 
 for sample in range(5):
+    print sample
     L = []
     for max_d in max_durations:
-        alphahat = m.forward(Y, max_d)
-        Z = m.backward_sample(alphahat, max_d)
+
+        m.left = [1 for i in range(3)]
+        m.right = [max_d for i in range(3)]
+        m.set_transition_likelihood()
+
+        alphahat = m.forward(Y)
+        Z = m.backward_sample(alphahat)
         l = m.loglikelihood([Z],[Y])
+        print "%s: %s"%(max_d,l)
         L.append(l)
     pb.plot(max_durations, L, color='blue', alpha=0.3)
 pb.xlabel('maximum durations considered')
@@ -68,7 +76,7 @@ pb.ylabel('log likelihood')
 
 beam_likelihoods = np.load('experiment_4_data/exp4a_L.npy')[:10]
 for beam_likelihood in beam_likelihoods:
-    plt.plot(max_durations, [beam_likelihood for d in max_durations], color="red", alpha=0.3)
+    pb.plot(max_durations, [beam_likelihood for d in max_durations], color="red", alpha=0.3)
 
 lTrue = m.loglikelihood([zip(X,Dseq)], [Y])
 pb.plot(max_durations, [lTrue for i in max_durations], color="green")
